@@ -57,7 +57,7 @@ bool WaylandKeyboardFeed::Bind(wl_seat* seat, wl_surface* targetSurface, xkb_con
 	}
 
 	wl_keyboard_add_listener(keyboard, &kKeyboardListener, this);
-	pipeline->FeedDeviceEvent(device, DeviceState::Idle);
+	pipeline->FeedEvent(device, VirtualKey::None, DeviceStateEvent{ DeviceState::Idle });
 	return true;
 }
 
@@ -75,7 +75,7 @@ void WaylandKeyboardFeed::Unbind() {
 		keymap = nullptr;
 	}
 	if (pipeline) {
-		pipeline->FeedDeviceEvent(device, DeviceState::Disconnected);
+		pipeline->FeedEvent(device, VirtualKey::None, DeviceStateEvent{ DeviceState::Disconnected });
 	}
 	focused = false;
 	surface = nullptr;
@@ -88,13 +88,13 @@ void WaylandKeyboardFeed::SetVirtualDevice(VirtualDevice newDevice) {
 	}
 	const bool wasFocused = focused;
 	if (pipeline && keyboard) {
-		pipeline->FeedDeviceEvent(device, DeviceState::Disconnected);
+		pipeline->FeedEvent(device, VirtualKey::None, DeviceStateEvent{ DeviceState::Disconnected });
 	}
 	device = newDevice;
 	if (pipeline && keyboard) {
-		pipeline->FeedDeviceEvent(device, DeviceState::Idle);
+		pipeline->FeedEvent(device, VirtualKey::None, DeviceStateEvent{ DeviceState::Idle });
 		if (wasFocused) {
-			pipeline->FeedDeviceEvent(device, DeviceState::FocusGained);
+			pipeline->FeedEvent(device, VirtualKey::None, DeviceStateEvent{ DeviceState::FocusGained });
 		}
 	}
 }
@@ -155,7 +155,7 @@ void WaylandKeyboardFeed::HandleEnter(void* data, wl_keyboard*, uint32_t, wl_sur
 		const auto sym = xkb_state_key_get_one_sym(self->state, keycode);
 		const auto vk = self->TranslateKeysym(sym);
 		if (vk != VirtualKey::None) {
-			self->pipeline->FeedKeyEvent(self->device, vk, VirtualKeyState::Down);
+			self->pipeline->FeedEvent(self->device, vk, KeyStateEvent{ VirtualKeyState::Down });
 		}
 	}
 }
@@ -182,7 +182,7 @@ void WaylandKeyboardFeed::HandleKey(void* data, wl_keyboard*, uint32_t, uint32_t
 	const auto sym = xkb_state_key_get_one_sym(self->state, keycode);
 	const auto vk = self->TranslateKeysym(sym);
 	if (vk != VirtualKey::None) {
-		self->pipeline->FeedKeyEvent(self->device, vk, ToVirtualKeyState(state));
+		self->pipeline->FeedEvent(self->device, vk, KeyStateEvent{ ToVirtualKeyState(state) });
 	}
 }
 
@@ -214,7 +214,8 @@ void WaylandKeyboardFeed::SetFocus(bool focusedState) {
 	}
 	focused = focusedState;
 	if (pipeline) {
-		pipeline->FeedDeviceEvent(device, focused ? DeviceState::FocusGained : DeviceState::FocusLost);
+		pipeline->FeedEvent(device, VirtualKey::None,
+			DeviceStateEvent{ focused ? DeviceState::FocusGained : DeviceState::FocusLost });
 	}
 	if (!focused) {
 		ResetState();

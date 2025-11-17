@@ -1,167 +1,266 @@
-#include "weave/system/math/Math.h"
+#pragma once
+
+#include "weave/input/system/VirtualKeyPayloads.h"
 #include "weave/input/system/VirtualKeys.h"
 #include "weave/input/system/VirtualDevices.h"
-#include <optional>
 #include <variant>
+#include <cstdint>
 
 namespace weave::input {
+
+struct DeviceStateEvent {
+	DeviceState state;
+};
+
+struct KeyStateEvent {
+	VirtualKeyState state;
+};
+
+struct CursorPositionEvent {
+    Vector3 position;
+};
+
+struct CursorDeltaEvent {
+    Vector3 delta;
+};
+
+struct CursorPosDeltaEvent {
+    Vector3 position;
+    Vector3 delta;
+};
+
+struct CursorNormalizationEvent {
+    Vector3 normalization;
+};
+
+struct PressureEvent {
+    float pressure;
+};
+
+struct PressureDeltaEvent {
+    float delta;
+};
+
+struct PressureAndDeltaEvent {
+	float pressure;
+	float delta;	
+};
+
+struct PressureNormalizationEvent {
+    float normalization;
+};
+
+struct MidiNoteEvent {
+	uint8_t note;
+	uint8_t velocity;
+	uint8_t channel;
+	bool pressed;
+};
+
+struct MidiControlEvent {
+	uint8_t control;
+	uint8_t value;
+	uint8_t channel;
+};
+
+struct MidiPitchBendEvent {
+	uint8_t channel;
+	int value;
+};
+
+struct MidiProgramEvent {
+	uint8_t channel;
+	uint8_t program;
+};
+
+struct MidiChannelPressureEvent {
+	uint8_t channel;
+	uint8_t pressure;
+};
+
+struct MidiPolyPressureEvent {
+	uint8_t note;
+	uint8_t channel;
+	uint8_t pressure;
+};
 
 struct InputEventData {
 	VirtualDevice device;
 	VirtualKey key{ VirtualKey::None };
 
 	std::variant<
-		DeviceState,
-		VirtualKeyState,
-		std::pair<Vector3, Vector3>, //Cursor Position & Delta
-		Vector3, //Cursor Position
-		Vector3, //C. Delta
-		Vector3, //C. Normalization
-		std::pair<float, float> , //Pressure & Delta
-		float, //Pressure
-		float, //P. Delta
-		float  //P. Normalization
+		std::monostate,
+		DeviceStateEvent,
+		KeyStateEvent,
+		CursorPositionEvent,
+		CursorDeltaEvent,
+		CursorPosDeltaEvent,
+		CursorNormalizationEvent,
+		PressureEvent,
+		PressureDeltaEvent,
+		PressureAndDeltaEvent,
+		PressureNormalizationEvent,
+		MidiNoteEvent,
+		MidiControlEvent,
+		MidiPitchBendEvent,
+		MidiProgramEvent,
+		MidiChannelPressureEvent,
+		MidiPolyPressureEvent
 	> eventData;
+
+	template<typename EventType>
+	InputEventData(VirtualDevice device, VirtualKey key, EventType&& event) 
+		: device(device)
+		, key(key)
+		, eventData(event)
+	{}
+
+	InputEventData(VirtualDevice device, DeviceState state)
+		: device(device)
+		, eventData(DeviceStateEvent{ state })
+	{}
 	
-	InputEventData(VirtualDevice device)
-		: device(device) {}
-
-	InputEventData(VirtualDevice device, VirtualKey key)
-		: device(device)
-		, key(key) {}
-
-	InputEventData(VirtualDevice device, DeviceState deviceState)
-		: device(device)
-		, eventData(deviceState) {
-	}
-
-	InputEventData(VirtualDevice device, VirtualKey key, VirtualKeyState keyState)
-		: device(device)
-		, key(key)
-		, eventData(keyState) {
-	}
-
-	InputEventData(VirtualDevice device, VirtualKey key, Vector3 position, Vector3 delta)
-		: device(device)
-		, key(key)
-		, eventData(std::pair{position, delta}) {
-	}
-
-	InputEventData(VirtualDevice device, VirtualKey key, float pressure, float delta)
-		: device(device)
-		, key(key)
-		, eventData(std::pair{ pressure, delta }) {
-	}
-
-	template<typename ...Args>
-	InputEventData(VirtualDevice device, VirtualKey key, Args &&... args)
-		: device(device)
-		, key(key)
-		, eventData(args...) {
-	}
-
-	static InputEventData BuildCursorPosition(VirtualDevice device, VirtualKey key, Vector3 position) {
-		return InputEventData (device, key, std::in_place_index<3>, position);
-	}
-
-	static InputEventData BuildCursorDelta(VirtualDevice device, VirtualKey key, Vector3 delta) {
-		return InputEventData(device, key, std::in_place_index<4>, delta);
-	}
-
-	static InputEventData BuildCursorNormalization(VirtualDevice device, VirtualKey key, Vector3 norm) {
-		return InputEventData(device, key, std::in_place_index<5>, norm);
-	}
-
-	static InputEventData BuildPressure(VirtualDevice device, VirtualKey key, float pressure) {
-		return InputEventData(device, key, std::in_place_index<7>, pressure);
-	}
-
-	static InputEventData BuildPressureDelta(VirtualDevice device, VirtualKey key, float delta) {
-		return InputEventData(device, key, std::in_place_index<8>, delta);
-	}
-
-	static InputEventData BuildPressureNormalization(VirtualDevice device, VirtualKey key, float norm) {
-		return InputEventData(device, key, std::in_place_index<9>, norm);
-	}
-
 	bool HasDeviceState() const {
-		return std::holds_alternative<DeviceState>(eventData);
+		return std::holds_alternative<DeviceStateEvent>(eventData);
 	}
 
 	bool HasVirtualKeyState() const {
-		return std::holds_alternative<VirtualKeyState>(eventData);
+		return std::holds_alternative<KeyStateEvent>(eventData);
 	}
 
 	bool HasCursorPositionAndDelta() const {
-		return std::holds_alternative<std::pair<Vector3, Vector3>>(eventData);
+		return std::holds_alternative<CursorPosDeltaEvent>(eventData);
 	}
 
 	bool HasCursorPosition() const {
-		return eventData.index() == 3;
+		return std::holds_alternative<CursorPositionEvent>(eventData) ||
+		       std::holds_alternative<CursorPosDeltaEvent>(eventData);
 	}
 
 	bool HasCursorDelta() const {
-		return eventData.index() == 4;
+		return std::holds_alternative<CursorDeltaEvent>(eventData) ||
+		       std::holds_alternative<CursorPosDeltaEvent>(eventData);
 	}
 
 	bool HasCursorNormalization() const {
-		return eventData.index() == 5;
-	}
-
-	bool HasCursorPressureAndDelta() const {
-		return std::holds_alternative<std::pair<float, float>>(eventData);
+		return std::holds_alternative<CursorNormalizationEvent>(eventData);
 	}
 
 	bool HasPressure() const {
-		return eventData.index() == 7;
+		return std::holds_alternative<PressureEvent>(eventData) ||
+		       std::holds_alternative<PressureAndDeltaEvent>(eventData);
 	}
 
 	bool HasPressureDelta() const {
-		return eventData.index() == 8;
+		return std::holds_alternative<PressureDeltaEvent>(eventData) ||
+		       std::holds_alternative<PressureAndDeltaEvent>(eventData);
+	}
+
+	bool HasPressureAndDelta() const {
+		return std::holds_alternative<PressureAndDeltaEvent>(eventData);
 	}
 
 	bool HasPressureNormalization() const {
-		return eventData.index() == 9;
+		return std::holds_alternative<PressureNormalizationEvent>(eventData);
 	}
 
-	auto GetDeviceState() const {
-		return std::get<DeviceState>(eventData);
+	bool HasMidiNote() const {
+		return std::holds_alternative<MidiNoteEvent>(eventData);
 	}
 
-	auto GetVirtualKeyState() const {
-		return std::get<VirtualKeyState>(eventData);
+	bool HasMidiControl() const {
+		return std::holds_alternative<MidiControlEvent>(eventData);
 	}
 
-	auto GetCursorPositionAndDelta() const {
-		return std::get<std::pair<Vector3, Vector3>>(eventData);
+	bool HasMidiPitchBend() const {
+		return std::holds_alternative<MidiPitchBendEvent>(eventData);
 	}
 
-	auto GetCursorPosition() const {
-		return std::get<3>(eventData);
+	bool HasMidiProgram() const {
+		return std::holds_alternative<MidiProgramEvent>(eventData);
+	}
+	bool HasMidiChannelPressure() const {
+		return std::holds_alternative<MidiChannelPressureEvent>(eventData);
 	}
 
-	auto GetCursorDelta() const {
-		return std::get<4>(eventData);
+	bool HasMidiPolyPressure() const {
+		return std::holds_alternative<MidiPolyPressureEvent>(eventData);
 	}
 
-	auto GetCursorNormalization() const {
-		return std::get<5>(eventData);
+	DeviceState GetDeviceState() const {
+		return std::get<DeviceStateEvent>(eventData).state;
 	}
 
-	auto GetCursorPressureAndDelta() const {
-		return std::get<std::pair<float, float>>(eventData);
+	VirtualKeyState GetVirtualKeyState() const {
+		return std::get<KeyStateEvent>(eventData).state;
 	}
 
-	auto GetPressure() const {
-		return std::get<7>(eventData);
+	std::pair<Vector3, Vector3> GetCursorPositionAndDelta() const {
+		auto const& cursor = std::get<CursorPosDeltaEvent>(eventData);
+		return { cursor.position, cursor.delta };
 	}
 
-	auto GetPressureDelta() const {
-		return std::get<8>(eventData);
+	Vector3 GetCursorPosition() const {
+		if (auto pos = std::get_if<CursorPositionEvent>(&eventData)) {
+			return pos->position;
+		}
+		return std::get<CursorPosDeltaEvent>(eventData).position;
 	}
 
-	auto GetPressureNormalization() const {
-		return std::get<9>(eventData);
+	Vector3 GetCursorDelta() const {
+		if (auto delta = std::get_if<CursorDeltaEvent>(&eventData)) {
+			return delta->delta;
+		}
+		return std::get<CursorPosDeltaEvent>(eventData).delta;
+	}
+
+	Vector3 GetCursorNormalization() const {
+		return std::get<CursorNormalizationEvent>(eventData).normalization;
+	}
+
+	float GetPressure() const {
+		if (auto pressure = std::get_if<PressureEvent>(&eventData)) {
+			return pressure->pressure;
+		}
+		return std::get<PressureAndDeltaEvent>(eventData).pressure;
+	}
+
+	float GetPressureDelta() const {
+		if (auto delta = std::get_if<PressureDeltaEvent>(&eventData)) {
+			return delta->delta;
+		}
+		return std::get<PressureAndDeltaEvent>(eventData).delta;
+	}
+
+	PressureAndDeltaEvent GetPressureAndDelta() const {
+		return std::get<PressureAndDeltaEvent>(eventData);
+	}
+
+	float GetPressureNormalization() const {
+		return std::get<PressureNormalizationEvent>(eventData).normalization;
+	}
+
+	MidiNoteEvent GetMidiNote() const {
+		return std::get<MidiNoteEvent>(eventData);
+	}
+
+	MidiControlEvent GetMidiControl() const {
+		return std::get<MidiControlEvent>(eventData);
+	}
+
+	MidiPitchBendEvent GetMidiPitchBend() const {
+		return std::get<MidiPitchBendEvent>(eventData);
+	}
+
+	MidiProgramEvent GetMidiProgram() const {
+		return std::get<MidiProgramEvent>(eventData);
+	}
+	MidiChannelPressureEvent GetMidiChannelPressure() const {
+		return std::get<MidiChannelPressureEvent>(eventData);
+	}
+
+	MidiPolyPressureEvent GetMidiPolyPressure() const {
+		return std::get<MidiPolyPressureEvent>(eventData);
 	}
 
 };

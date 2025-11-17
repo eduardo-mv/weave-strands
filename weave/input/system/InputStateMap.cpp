@@ -1,5 +1,4 @@
 #include "InputStateMap.h"
-#include "InputStateMap.h"
 
 using namespace weave::input;
 
@@ -9,62 +8,6 @@ InputStateMap::InputStateMap() {
 		deviceKeyData.device = weave::input::OffsetDevice(VirtualDevice::_First, deviceIndex++);
 		ResetDeviceState(deviceKeyData);
 	}
-}
-
-
-bool KeyStateData::SetState(VirtualKeyState stt) {
-	previous = current;
-	if (current != VirtualKeyState::Up && stt == VirtualKeyState::Down) {
-		current = VirtualKeyState::Hold;
-		return true;
-	}
-	else if (current != stt) {
-		current = stt;
-		return true;
-	}
-	else
-		return false;
-}
-
-bool KeyPressureData::SetPressure(float newPressure) {
-	if (newPressure == pressure)
-		return false;
-
-	pressureDelta = newPressure - pressure;
-	pressure = newPressure;
-
-	return true;
-}
-
-bool CursorData::SetPosition(float x, float y, float z) {
-	if (x == position.x && y == position.y && z == position.z)
-		return false;
-	prevPosition = position;
-	position.Set(x, y, z);
-
-	positiontDelta = position - prevPosition;
-
-	return true;
-}
-
-bool CursorData::SetPositionDelta(float x, float y, float z) {
-	if (x == 0.0f && y == 0.0f && z == 0.0f)
-		return false;
-	positiontDelta.Set(x, y, z);
-
-	prevPosition = position;
-	position += (positiontDelta);
-
-	return true;
-}
-
-bool CursorData::SetData(float px, float py, float pz, float mx, float my, float mz) {
-	positiontDelta.Set(mx, my, mz);
-
-	prevPosition = position;
-	position.Set(px, py, pz);
-
-	return true;
 }
 
 DeviceState InputStateMap::QueryDeviceState(VirtualDevice device) const {
@@ -78,23 +21,24 @@ DeviceState InputStateMap::QueryDeviceState(VirtualDevice device) const {
 	return DeviceState::Disconnected;
 }
 
-
 KeyData InputStateMap::QueryKeyData(VirtualDevice device, VirtualKey key) const {
 	auto deviceIndex = static_cast<uint32_t>(device);
 	std::shared_lock<std::shared_mutex> lock(deviceDataMutex[deviceIndex]);
-	KeyData keyData{ device , key};
+	KeyData keyData{ device , key };
 
 	if (deviceIndex < deviceData.size() && key != VirtualKey::None) {
 		auto& deviceKeyData = deviceData[deviceIndex];
-		if (weave::input::IsCursorKey(key)) {
+		if (SupportsCursor(key)) {
 			keyData.cursor = deviceKeyData.GetCursorData(key);
 		}
-		else {
-			if (weave::input::IsPressureKey(key)) {
-				keyData.pressure = deviceKeyData.GetKeyPressureData(key);
-			}
-
+		if (SupportsPressure(key)) {
+			keyData.pressure = deviceKeyData.GetKeyPressureData(key);
+		}
+		if (SupportsState(key)) {
 			keyData.state = deviceKeyData.GetKeyStateData(key);
+		}
+		if (SupportsMidi(key) && deviceKeyData.midi) {
+			keyData.midi = deviceKeyData.midi;
 		}
 	}
 
@@ -110,8 +54,8 @@ void InputStateMap::WriteDeviceState(VirtualDevice device, DeviceState state) {
 
 	auto& deviceKeyData = deviceData[deviceIndex];
 
-	if(deviceKeyData.state == state) {
-		return;		
+	if (deviceKeyData.state == state) {
+		return;
 	}
 
 	if (state == DeviceState::FocusGained) {
@@ -124,8 +68,8 @@ void InputStateMap::WriteDeviceState(VirtualDevice device, DeviceState state) {
 	deviceKeyData.state = state;
 }
 
-void InputStateMap::WriteKeyData(VirtualDevice device, VirtualKey key, KeyStateData const& data) {
-	if (weave::input::IsCursorKey(key)) {
+void InputStateMap::WriteKeyData(VirtualDevice device, VirtualKey key, KeyStatePayload const& data) {
+	if (!SupportsState(key)) {
 		return;
 	}
 	auto deviceIndex = static_cast<uint32_t>(device);
@@ -136,8 +80,8 @@ void InputStateMap::WriteKeyData(VirtualDevice device, VirtualKey key, KeyStateD
 	}
 }
 
-void InputStateMap::WriteKeyData(VirtualDevice device, VirtualKey key, KeyPressureData const& data) {
-	if (!weave::input::IsPressureKey(key)) {
+void InputStateMap::WriteKeyData(VirtualDevice device, VirtualKey key, KeyPressurePayload const& data) {
+	if (!SupportsPressure(key)) {
 		return;
 	}
 	auto deviceIndex = static_cast<uint32_t>(device);
@@ -148,8 +92,8 @@ void InputStateMap::WriteKeyData(VirtualDevice device, VirtualKey key, KeyPressu
 	}
 }
 
-void InputStateMap::WriteKeyData(VirtualDevice device, VirtualKey key, CursorData const& data) {
-	if (!weave::input::IsCursorKey(key)) {
+void InputStateMap::WriteKeyData(VirtualDevice device, VirtualKey key, CursorPayload const& data) {
+	if (!SupportsCursor(key)) {
 		return;
 	}
 	auto deviceIndex = static_cast<uint32_t>(device);
@@ -161,7 +105,7 @@ void InputStateMap::WriteKeyData(VirtualDevice device, VirtualKey key, CursorDat
 }
 
 void InputStateMap::WriteKeyState(VirtualDevice device, VirtualKey key, VirtualKeyState state) {
-	if (!weave::input::IsPushKey(key)) {
+	if (!SupportsState(key)) {
 		return;
 	}
 	auto deviceIndex = static_cast<uint32_t>(device);
@@ -171,7 +115,7 @@ void InputStateMap::WriteKeyState(VirtualDevice device, VirtualKey key, VirtualK
 }
 
 void InputStateMap::WriteKeyPressure(VirtualDevice device, VirtualKey key, float pressure) {
-	if (!weave::input::IsPressureKey(key)) {
+	if (!SupportsPressure(key)) {
 		return;
 	}
 	auto deviceIndex = static_cast<uint32_t>(device);
@@ -181,7 +125,7 @@ void InputStateMap::WriteKeyPressure(VirtualDevice device, VirtualKey key, float
 }
 
 void InputStateMap::WriteKeyPressureDelta(VirtualDevice device, VirtualKey key, float pressure) {
-	if (!weave::input::IsPressureKey(key)) {
+	if (!SupportsPressure(key)) {
 		return;
 	}
 	auto deviceIndex = static_cast<uint32_t>(device);
@@ -190,8 +134,20 @@ void InputStateMap::WriteKeyPressureDelta(VirtualDevice device, VirtualKey key, 
 	deviceKeyData.KeyPressureDataRef(key).pressureDelta = pressure;
 }
 
+void InputStateMap::WriteKeyPressureAndDelta(VirtualDevice device, VirtualKey key, float pressure, float delta) {
+	if (!SupportsPressure(key)) {
+		return;
+	}
+	auto deviceIndex = static_cast<uint32_t>(device);
+	std::unique_lock<std::shared_mutex> lock(deviceDataMutex[deviceIndex]);
+	auto& deviceKeyData = deviceData[deviceIndex];
+	auto& payload = deviceKeyData.KeyPressureDataRef(key);
+	payload.pressure = pressure;
+	payload.pressureDelta = delta;
+}
+
 void InputStateMap::WriteKeyPressureNormalization(VirtualDevice device, VirtualKey key, float x) {
-	if (!weave::input::IsPressureKey(key)) {
+	if (!SupportsPressure(key)) {
 		return;
 	}
 	auto deviceIndex = static_cast<uint32_t>(device);
@@ -201,7 +157,7 @@ void InputStateMap::WriteKeyPressureNormalization(VirtualDevice device, VirtualK
 }
 
 void InputStateMap::WriteCursorPosition(VirtualDevice device, VirtualKey key, float x, float y, float z) {
-	if (!weave::input::IsCursorKey(key)) {
+	if (!SupportsCursor(key)) {
 		return;
 	}
 	auto deviceIndex = static_cast<uint32_t>(device);
@@ -211,7 +167,7 @@ void InputStateMap::WriteCursorPosition(VirtualDevice device, VirtualKey key, fl
 }
 
 void InputStateMap::WriteCursorDelta(VirtualDevice device, VirtualKey key, float x, float y, float z) {
-	if (!weave::input::IsCursorKey(key)) {
+	if (!SupportsCursor(key)) {
 		return;
 	}
 	auto deviceIndex = static_cast<uint32_t>(device);
@@ -221,17 +177,17 @@ void InputStateMap::WriteCursorDelta(VirtualDevice device, VirtualKey key, float
 }
 
 void InputStateMap::WriteCursorPositionAndDelta(VirtualDevice device, VirtualKey key, float px, float py, float pz, float dx, float dy, float dz) {
-	if (!weave::input::IsCursorKey(key)) {
+	if (!SupportsCursor(key)) {
 		return;
 	}
 	auto deviceIndex = static_cast<uint32_t>(device);
 	std::unique_lock<std::shared_mutex> lock(deviceDataMutex[deviceIndex]);
-	auto& deviceKeyData = deviceData[static_cast<uint32_t>(device)];
+	auto& deviceKeyData = deviceData[deviceIndex];
 	deviceKeyData.CursorDataRef(key).SetData(px, py, pz, dx, dy, dz);
 }
 
 void InputStateMap::WriteCursorNormalization(VirtualDevice device, VirtualKey key, float x, float y, float z) {
-	if (!weave::input::IsCursorKey(key)) {
+	if (!SupportsCursor(key)) {
 		return;
 	}
 	auto deviceIndex = static_cast<uint32_t>(device);
@@ -240,11 +196,137 @@ void InputStateMap::WriteCursorNormalization(VirtualDevice device, VirtualKey ke
 	deviceKeyData.CursorDataRef(key).normalizationValues.Set(x, y, z);
 }
 
-InputMessage InputStateMap::CreateMessage(uint64_t id, size_t reportCount) {
-	std::lock_guard<std::mutex> lock(ribbonMutex);
-	return InputMessage{ id, { ribbonAllocator.AllocateMany<KeyData>(reportCount) , reportCount} };
+void InputStateMap::WriteMidiNote(VirtualDevice device, uint8_t note, uint8_t channel, uint8_t velocity, bool pressed) {
+	if (!IsMidiDevice(device)) {
+		return;
+	}
+	if (note >= MidiPayload::kNoteCount) {
+		return;
+	}
+	channel &= 0x0F;
+	auto deviceIndex = static_cast<uint32_t>(device);
+	std::unique_lock<std::shared_mutex> lock(deviceDataMutex[deviceIndex]);
+	if (deviceIndex >= deviceData.size()) {
+		return;
+	}
+	auto& deviceKeyData = deviceData[deviceIndex];
+	if (!deviceKeyData.midi) {
+		deviceKeyData.midi.emplace();
+	}
+	auto& entry = deviceKeyData.midi->notes[note];
+	entry.active = pressed;
+	entry.velocity = velocity;
+	entry.channel = channel;
+	if (!pressed) {
+		entry.aftertouch = 0;
+	}
 }
 
+void InputStateMap::WriteMidiControl(VirtualDevice device, uint8_t control, uint8_t channel, uint8_t value) {
+	if (!IsMidiDevice(device)) {
+		return;
+	}
+	if (control >= MidiPayload::kControlCount) {
+		return;
+	}
+	channel &= 0x0F;
+	auto deviceIndex = static_cast<uint32_t>(device);
+	std::unique_lock<std::shared_mutex> lock(deviceDataMutex[deviceIndex]);
+	if (deviceIndex >= deviceData.size()) {
+		return;
+	}
+	auto& deviceKeyData = deviceData[deviceIndex];
+	if (!deviceKeyData.midi) {
+		deviceKeyData.midi.emplace();
+	}
+	auto& entry = deviceKeyData.midi->controls[control];
+	entry.value = value;
+	entry.channel = channel;
+}
+
+void InputStateMap::WriteMidiPitchBend(VirtualDevice device, uint8_t channel, int value) {
+	if (!IsMidiDevice(device)) {
+		return;
+	}
+	channel &= 0x0F;
+	auto deviceIndex = static_cast<uint32_t>(device);
+	std::unique_lock<std::shared_mutex> lock(deviceDataMutex[deviceIndex]);
+	if (deviceIndex >= deviceData.size()) {
+		return;
+	}
+	auto& deviceKeyData = deviceData[deviceIndex];
+	if (!deviceKeyData.midi) {
+		deviceKeyData.midi.emplace();
+	}
+	auto& entry = deviceKeyData.midi->pitch[channel];
+	entry.value = value;
+	entry.channel = channel;
+}
+
+void InputStateMap::WriteMidiProgram(VirtualDevice device, uint8_t channel, uint8_t program) {
+	if (!IsMidiDevice(device)) {
+		return;
+	}
+	channel &= 0x0F;
+	auto deviceIndex = static_cast<uint32_t>(device);
+	std::unique_lock<std::shared_mutex> lock(deviceDataMutex[deviceIndex]);
+	if (deviceIndex >= deviceData.size()) {
+		return;
+	}
+	auto& deviceKeyData = deviceData[deviceIndex];
+	if (!deviceKeyData.midi) {
+		deviceKeyData.midi.emplace();
+	}
+	auto& entry = deviceKeyData.midi->programs[channel];
+	entry.program = program;
+	entry.channel = channel;
+}
+
+void InputStateMap::WriteMidiChannelPressure(VirtualDevice device, uint8_t channel, uint8_t pressure) {
+	if (!IsMidiDevice(device)) {
+		return;
+	}
+	channel &= 0x0F;
+	auto deviceIndex = static_cast<uint32_t>(device);
+	std::unique_lock<std::shared_mutex> lock(deviceDataMutex[deviceIndex]);
+	if (deviceIndex >= deviceData.size()) {
+		return;
+	}
+	auto& deviceKeyData = deviceData[deviceIndex];
+	if (!deviceKeyData.midi) {
+		deviceKeyData.midi.emplace();
+	}
+	auto& entry = deviceKeyData.midi->channelPressure[channel];
+	entry.pressure = pressure;
+	entry.channel = channel;
+}
+
+void InputStateMap::WriteMidiPolyPressure(VirtualDevice device, uint8_t note, uint8_t channel, uint8_t pressure) {
+	if (!IsMidiDevice(device)) {
+		return;
+	}
+	if (note >= MidiPayload::kNoteCount) {
+		return;
+	}
+	channel &= 0x0F;
+	auto deviceIndex = static_cast<uint32_t>(device);
+	std::unique_lock<std::shared_mutex> lock(deviceDataMutex[deviceIndex]);
+	if (deviceIndex >= deviceData.size()) {
+		return;
+	}
+	auto& deviceKeyData = deviceData[deviceIndex];
+	if (!deviceKeyData.midi) {
+		deviceKeyData.midi.emplace();
+	}
+	auto& entry = deviceKeyData.midi->notes[note];
+	entry.aftertouch = pressure;
+	entry.channel = channel;
+}
+
+InputMessage InputStateMap::CreateMessage(uint64_t id, size_t reportCount) {
+	std::lock_guard<std::mutex> lock(ribbonMutex);
+	return InputMessage{ id, { ribbonAllocator.AllocateMany<KeyData>(reportCount), reportCount } };
+}
 
 void InputStateMap::WriteMessage(InputMessage message) {
 	std::unique_lock lock(messagesMutex);
@@ -253,7 +335,7 @@ void InputStateMap::WriteMessage(InputMessage message) {
 
 std::vector<InputMessage> InputStateMap::FlushMessages() {
 	std::unique_lock lockSwap(messagesSwapMutex);
-	{	
+	{
 		std::unique_lock lockMessages(messagesMutex);
 		std::swap(messages, messagesSwap);
 		messages.clear();
@@ -278,12 +360,27 @@ void InputStateMap::ResetDeviceState(DeviceKeyData& data) {
 	for (auto& pressureState : data.pressure) {
 		pressureState.pressure = 0.0f;
 		pressureState.pressureDelta = 0.0f;
+		pressureState.pressureNormalization = 1.0f;
 	}
 	for (auto& cursor : data.cursors) {
 		cursor.position.Set(0.0f, 0.0f, 0.0f);
 		cursor.prevPosition.Set(0.0f, 0.0f, 0.0f);
-		cursor.positiontDelta.Set(0.0f, 0.0f, 0.0f);
+		cursor.positionDelta.Set(0.0f, 0.0f, 0.0f);
+		cursor.normalizationValues.Set(0.0f, 0.0f, 0.0f);
 	}
+		if (IsMidiDevice(data.device)) {
+			if (!data.midi) {
+				data.midi.emplace();
+			}
+			for (auto& note : data.midi->notes) {
+				note = MidiNoteState{};
+			}
+			for (auto& entry : data.midi->channelPressure) {
+				entry = MidiChannelPressureState{};
+			}
+		} else {
+			data.midi.reset();
+		}
+	data.state = DeviceState::Disconnected;
+	data.previousState = DeviceState::Disconnected;
 }
-
-

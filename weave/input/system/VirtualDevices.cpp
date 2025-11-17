@@ -78,6 +78,23 @@ VirtualDevice weave::input::VirtualDeviceValue(std::string const &name) {
 		macroTable(Gamepad13)
 		macroTable(Gamepad14)
 		macroTable(Gamepad15)
+		macroTable(Midi)
+		macroTable(Midi0)
+		macroTable(Midi1)
+		macroTable(Midi2)
+		macroTable(Midi3)
+		macroTable(Midi4)
+		macroTable(Midi5)
+		macroTable(Midi6)
+		macroTable(Midi7)
+		macroTable(Midi8)
+		macroTable(Midi9)
+		macroTable(Midi10)
+		macroTable(Midi11)
+		macroTable(Midi12)
+		macroTable(Midi13)
+		macroTable(Midi14)
+		macroTable(Midi15)
 	};
 
 #undef macroTable
@@ -141,6 +158,22 @@ std::string weave::input::VirtualDeviceName(VirtualDevice dev) {
 			macroTable(Gamepad13)
 			macroTable(Gamepad14)
 			macroTable(Gamepad15)
+			macroTable(Midi0)
+			macroTable(Midi1)
+			macroTable(Midi2)
+			macroTable(Midi3)
+			macroTable(Midi4)
+			macroTable(Midi5)
+			macroTable(Midi6)
+			macroTable(Midi7)
+			macroTable(Midi8)
+			macroTable(Midi9)
+			macroTable(Midi10)
+			macroTable(Midi11)
+			macroTable(Midi12)
+			macroTable(Midi13)
+			macroTable(Midi14)
+			macroTable(Midi15)
 		default:
 			break;
 	}
@@ -222,6 +255,10 @@ bool weave::input::IsGamepadDevice(VirtualDevice dev) {
 	return dev >= VirtualDevice::_First_Gamepad && dev <= VirtualDevice::_Last_Gamepad;
 }
 
+bool weave::input::IsMidiDevice(VirtualDevice dev) {
+	return dev >= VirtualDevice::_First_Midi && dev <= VirtualDevice::_Last_Midi;
+}
+
 std::pair<VirtualDevice, uint32_t> weave::input::GetDeviceAndOffset(VirtualDevice dev) {
 	auto deviceValue = static_cast<std::underlying_type_t<VirtualDevice>>(dev);
 
@@ -236,6 +273,10 @@ std::pair<VirtualDevice, uint32_t> weave::input::GetDeviceAndOffset(VirtualDevic
 	constexpr auto gamepadRange = std::pair{
 		static_cast<std::underlying_type_t<VirtualDevice>>(VirtualDevice::_First_Gamepad),
 		static_cast<std::underlying_type_t<VirtualDevice>>(VirtualDevice::_Last_Gamepad) };
+	
+	constexpr auto midiRange = std::pair{
+		static_cast<std::underlying_type_t<VirtualDevice>>(VirtualDevice::_First_Midi),
+		static_cast<std::underlying_type_t<VirtualDevice>>(VirtualDevice::_Last_Midi) };
 
 	auto inRange = [deviceValue](auto range) {
 		return (deviceValue >= range.first && deviceValue <= range.second);
@@ -251,6 +292,10 @@ std::pair<VirtualDevice, uint32_t> weave::input::GetDeviceAndOffset(VirtualDevic
 
 	if (inRange(gamepadRange)) {
 		return { VirtualDevice::Gamepad, deviceValue - gamepadRange.first };
+	}
+	
+	if (inRange(midiRange)) {
+		return { VirtualDevice::Midi, deviceValue - midiRange.first };
 	}
 	return { VirtualDevice::None, 0 };
 

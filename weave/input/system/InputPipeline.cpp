@@ -45,79 +45,10 @@ InputProcessor* InputPipeline::GetFrontProcessor() {
 	return pipeline.front().get();
 }
 
-void InputPipeline::FeedKeyEvent(VirtualDevice device, VirtualKey key, VirtualKeyState state) {
+void InputPipeline::FeedEvent(InputEventData event) {
 	std::shared_lock lock(pipelineMutex);
 	if (auto head = GetFrontProcessor()) {
-		head->InputEvent(InputEventData{ device, key, state }, inputState);
-	}
-}
-
-void InputPipeline::FeedKeyPressure(VirtualDevice device, VirtualKey key, float pressure) {
-	std::shared_lock lock(pipelineMutex);
-	if (auto head = GetFrontProcessor()) {
-		head->InputEvent(InputEventData::BuildPressure(device, key, pressure), inputState);
-	}
-}
-
-void InputPipeline::FeedKeyPressureDelta(VirtualDevice device, VirtualKey key, float pressure) {
-	std::shared_lock lock(pipelineMutex);
-	if (auto head = GetFrontProcessor()) {
-		head->InputEvent(InputEventData::BuildPressureDelta(device, key, pressure), inputState);
-	}
-}
-
-void InputPipeline::FeedCursorPosition(VirtualDevice device, VirtualKey key, int x, int y, int z) {
-	FeedCursorPosition(device, key, (float)x,(float)y,(float)z);
-}
-
-void InputPipeline::FeedCursorPosition(VirtualDevice device, VirtualKey key, float x, float y, float z) {
-	std::shared_lock lock(pipelineMutex);
-	if (auto head = GetFrontProcessor()) {
-		head->InputEvent(InputEventData::BuildCursorPosition(device, key, Vector3{x, y, z}), inputState);
-	}
-}
-
-
-void InputPipeline::FeedCursorDelta(VirtualDevice device, VirtualKey key, int x, int y, int z) {
-	FeedCursorDelta(device, key, (float)x,(float)y,(float)z);
-}
-
-void InputPipeline::FeedCursorDelta(VirtualDevice device, VirtualKey key, float x, float y, float z) {
-	std::shared_lock lock(pipelineMutex);
-	if (auto head = GetFrontProcessor()) {
-		head->InputEvent(InputEventData::BuildCursorDelta(device, key, Vector3(x, y, z)), inputState);
-	}
-}
-
-void InputPipeline::FeedCursorPositionAndDelta(VirtualDevice device, VirtualKey key, int px, int py, int pz, int mx, int my, int mz) {
-	FeedCursorPositionAndDelta(device, key, (float)px,(float)py,(float)pz,(float)mx,(float)my,(float)mz);
-}
-
-void InputPipeline::FeedCursorPositionAndDelta(VirtualDevice device, VirtualKey key, float px, float py, float pz, float dx, float dy, float dz) {
-	std::shared_lock lock(pipelineMutex);
-	if (auto head = GetFrontProcessor()) {
-		head->InputEvent(InputEventData{ device, key, Vector3(px, py, pz), Vector3(dx, dy, dz) }, inputState);
-	}
-}
-
-void InputPipeline::SetCursorNormalization(VirtualDevice device, VirtualKey key, float x, float y, float z) {
-	std::shared_lock lock(pipelineMutex);
-	if (auto head = GetFrontProcessor()) {
-		head->InputEvent(InputEventData::BuildCursorNormalization(device, key, Vector3(x, y, z)), inputState);
-	}
-}
-
-void InputPipeline::SetKeyPressureNormalization(VirtualDevice device, VirtualKey key, float x) {
-	std::shared_lock lock(pipelineMutex);
-	if (auto head = GetFrontProcessor()) {
-		head->InputEvent(InputEventData::BuildPressureNormalization(device, key, x), inputState);
-	}
-}
-
-void InputPipeline::FeedDeviceEvent(VirtualDevice device, DeviceState state) {
-	std::shared_lock lock(pipelineMutex);
-	if (auto head = GetFrontProcessor()) {
-		head->InputEvent(InputEventData{ device, state }, inputState);
+		head->InputEvent(std::move(event), inputState);
 	}
 }
 

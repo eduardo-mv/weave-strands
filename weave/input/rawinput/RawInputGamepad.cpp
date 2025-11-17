@@ -21,30 +21,6 @@ using weave::input::gamepad::kStandardLayouts;
 static_assert(static_cast<size_t>(RawInputGamepad::GamepadLayout::_LastLayout) == weave::input::gamepad::kLayoutCount,
 	"RawInputGamepad layout enum out of sync with shared layout table");
 
-namespace {
-	//Helper functions
-	template<typename ...Params>
-	void FeedCursorPositionAndDelta(InputPipeline& inputPipeline, std::vector<VirtualDevice> const& devices, Params&&... params) {
-		for (auto const& dev : devices) {
-			inputPipeline.FeedCursorPositionAndDelta(dev, params...);
-		}
-	}
-
-	template<typename ...Params>
-	void FeedCursorPosition(InputPipeline& inputPipeline, std::vector<VirtualDevice> const& devices, Params&&... params) {
-		for (auto const& dev : devices) {
-			inputPipeline.FeedCursorPosition(dev, params...);
-		}
-	}
-
-	template<typename ...Params>
-	void FeedKeyEvent(InputPipeline& inputPipeline, std::vector<VirtualDevice> const& devices, Params&&... params) {
-		for (auto const& dev : devices) {
-			inputPipeline.FeedKeyEvent(dev, params...);
-		}
-	}
-}
-
 RawInputGamepad::HidInfo& RawInputGamepad::HidInfo::operator=(HidInfo&& other)
 {
 	std::swap(hDevice, other.hDevice);
@@ -402,7 +378,8 @@ int RawInputGamepad::GamepadDeviceData::FeedSyncInput(HRAWINPUT lparam, InputPip
 			auto layout = kStandardLayouts[static_cast<uint32_t>(info.currentLayout)];
 			uint32_t keyIndex = (i - firstButtonIndex);
 			VirtualKey button = (keyIndex < 20 ? layout[keyIndex] : input::OffsetKey(VirtualKey::Button0, keyIndex));
-			inputPipeline.FeedKeyEvent(info.virtualDevice, button, (reportMap[i] > 0 ? VirtualKeyState::Down : VirtualKeyState::Up));
+			inputPipeline.FeedEvent(info.virtualDevice, button,
+				KeyStateEvent{ (reportMap[i] > 0 ? VirtualKeyState::Down : VirtualKeyState::Up) });
 		}
 	}
 
@@ -425,7 +402,8 @@ int RawInputGamepad::GamepadDeviceData::FeedSyncInput(HRAWINPUT lparam, InputPip
 			WLOG(WLog::Info) << "L : " << reportMap[idx0] << ", " << reportMap[idx1];
 			WLOG(WLog::Info) << "Lf: " << x << ", " << y;
 #endif
-			inputPipeline.FeedCursorPositionAndDelta(info.virtualDevice, VirtualKey::Lstick, x, y, 0.0f, deltax, deltay, 0.0f);
+			inputPipeline.FeedEvent(info.virtualDevice, VirtualKey::Lstick,
+				CursorPosDeltaEvent{ Vector3{ x, y, 0.0f }, Vector3{ deltax, deltay, 0.0f } });
 			EmulateDigitalPad(0, x, y, deltax, deltay, inputPipeline);
 		}
 	}
@@ -447,7 +425,8 @@ int RawInputGamepad::GamepadDeviceData::FeedSyncInput(HRAWINPUT lparam, InputPip
 			WLOG(WLog::Info) << "R : " << reportMap[idx0] << ", " << reportMap[idx1];
 			WLOG(WLog::Info) << "Rf: " << x << ", " << y;
 #endif
-			inputPipeline.FeedCursorPositionAndDelta(info.virtualDevice, VirtualKey::Rstick, x, y, 0.0f, deltax, deltay, 0.0f);
+			inputPipeline.FeedEvent(info.virtualDevice, VirtualKey::Rstick,
+				CursorPosDeltaEvent{ Vector3{ x, y, 0.0f }, Vector3{ deltax, deltay, 0.0f } });
 			EmulateDigitalPad(1, x, y, deltax, deltay, inputPipeline);
 		}
 	}
@@ -482,7 +461,8 @@ int RawInputGamepad::GamepadDeviceData::FeedSyncInput(HRAWINPUT lparam, InputPip
 			else {
 				//Default work is to report as trigger data
 				float z = (reportMap[idx2] * leftNorm.z);
-				inputPipeline.FeedCursorPosition(info.virtualDevice, VirtualKey::Trigger0, z, z, z);
+				inputPipeline.FeedEvent(info.virtualDevice, VirtualKey::Trigger0,
+					CursorPositionEvent{ Vector3{ z, z, z } });
 			}
 		}
 	}
@@ -497,7 +477,8 @@ int RawInputGamepad::GamepadDeviceData::FeedSyncInput(HRAWINPUT lparam, InputPip
 			WLOG(WLog::Info) << "ZR :" << reportMap[idx2];
 			WLOG(WLog::Info) << "ZRf:" << z;
 #endif
-			inputPipeline.FeedCursorPosition(info.virtualDevice, VirtualKey::Trigger1, z, z, z);
+			inputPipeline.FeedEvent(info.virtualDevice, VirtualKey::Trigger1,
+				CursorPositionEvent{ Vector3{ z, z, z } });
 		}
 
 	}
@@ -510,11 +491,13 @@ int RawInputGamepad::GamepadDeviceData::FeedSyncInput(HRAWINPUT lparam, InputPip
 			//Since the hat switch can only have one state at any time, we send a release event on the previous key first and then a press event for the new key
 			LONG state = reportMapPrev[idx0] - hatSwitch->LogicalMin;
 			if(state >= 0 && state <= 7)
-				inputPipeline.FeedKeyEvent(info.virtualDevice, input::OffsetKey(VirtualKey::North, (uint8_t)state), VirtualKeyState::Up);
+				inputPipeline.FeedEvent(info.virtualDevice, input::OffsetKey(VirtualKey::North, (uint8_t)state),
+					KeyStateEvent{ VirtualKeyState::Up });
 
 			state = reportMap[idx0] - hatSwitch->LogicalMin;
 			if(state >= 0 && state <= 7)
-				inputPipeline.FeedKeyEvent(info.virtualDevice, input::OffsetKey(VirtualKey::North, (uint8_t)state), VirtualKeyState::Down);
+				inputPipeline.FeedEvent(info.virtualDevice, input::OffsetKey(VirtualKey::North, (uint8_t)state),
+					KeyStateEvent{ VirtualKeyState::Down });
 		}
 	}
 
@@ -522,27 +505,31 @@ int RawInputGamepad::GamepadDeviceData::FeedSyncInput(HRAWINPUT lparam, InputPip
 	if(dpadUp) {
 		idx0 = dpadUp->Range.DataIndexMin;
 		if(reportMapPrev[idx0] != reportMap[idx0]) {
-			inputPipeline.FeedKeyEvent(info.virtualDevice, VirtualKey::North, reportMap[idx0] ? VirtualKeyState::Down : VirtualKeyState::Up);
+			inputPipeline.FeedEvent(info.virtualDevice, VirtualKey::North,
+				KeyStateEvent{ reportMap[idx0] ? VirtualKeyState::Down : VirtualKeyState::Up });
 		}
 
 		if(dpadDown) {
 			idx0 = dpadDown->Range.DataIndexMin;
 			if(reportMapPrev[idx0] != reportMap[idx0]) {
-				inputPipeline.FeedKeyEvent(info.virtualDevice, VirtualKey::South, reportMap[idx0] ? VirtualKeyState::Down : VirtualKeyState::Up);
+				inputPipeline.FeedEvent(info.virtualDevice, VirtualKey::South,
+					KeyStateEvent{ reportMap[idx0] ? VirtualKeyState::Down : VirtualKeyState::Up });
 			}
 		}
 
 		if(dpadLeft) {
 			idx0 = dpadLeft->Range.DataIndexMin;
 			if(reportMapPrev[idx0] != reportMap[idx0]) {
-				inputPipeline.FeedKeyEvent(info.virtualDevice, VirtualKey::West, reportMap[idx0] ? VirtualKeyState::Down : VirtualKeyState::Up);
+				inputPipeline.FeedEvent(info.virtualDevice, VirtualKey::West,
+					KeyStateEvent{ reportMap[idx0] ? VirtualKeyState::Down : VirtualKeyState::Up });
 			}
 		}
 
 		if(dpadRight) {
 			idx0 = dpadRight->Range.DataIndexMin;
 			if(reportMapPrev[idx0] != reportMap[idx0]) {
-				inputPipeline.FeedKeyEvent(info.virtualDevice, VirtualKey::East, reportMap[idx0] ? VirtualKeyState::Down : VirtualKeyState::Up);
+				inputPipeline.FeedEvent(info.virtualDevice, VirtualKey::East,
+					KeyStateEvent{ reportMap[idx0] ? VirtualKeyState::Down : VirtualKeyState::Up });
 			}
 		}
 	}
@@ -568,7 +555,8 @@ void RawInputGamepad::GamepadDeviceData::EmulateDigitalPad(int stick, float posx
 		//Pullup detection
 		if(dir.y == 0 && posy - cap.y > responseDelta && posy > deadLimit) {
 			//Send North Down event
-			inputPipeline.FeedKeyEvent(info.virtualDevice, stick == 0 ? VirtualKey::Lstick_North : VirtualKey::Rstick_North, VirtualKeyState::Down);
+			inputPipeline.FeedEvent(info.virtualDevice, stick == 0 ? VirtualKey::Lstick_North : VirtualKey::Rstick_North,
+				KeyStateEvent{ VirtualKeyState::Down });
 			dir.y = 1;
 		}
 		if(dir.y == 1 && posy > cap.y) {
@@ -578,7 +566,8 @@ void RawInputGamepad::GamepadDeviceData::EmulateDigitalPad(int stick, float posx
 		//Release pulldown detection
 		if(dir.y == -1 && posy - cap.y > responseDelta) {
 			//Send South release (Up) event here
-			inputPipeline.FeedKeyEvent(info.virtualDevice, stick == 0 ? VirtualKey::Lstick_South : VirtualKey::Rstick_South, VirtualKeyState::Up);
+			inputPipeline.FeedEvent(info.virtualDevice, stick == 0 ? VirtualKey::Lstick_South : VirtualKey::Rstick_South,
+				KeyStateEvent{ VirtualKeyState::Up });
 			dir.y = 0;
 			cap.y = 0.0f;
 		}
@@ -592,7 +581,8 @@ void RawInputGamepad::GamepadDeviceData::EmulateDigitalPad(int stick, float posx
 		//Pulldown detection
 		if(dir.y == 0 && cap.y - posy > responseDelta && posy < -deadLimit) {
 			//Send South Down event
-			inputPipeline.FeedKeyEvent(info.virtualDevice, stick == 0 ? VirtualKey::Lstick_South : VirtualKey::Rstick_South, VirtualKeyState::Down);
+			inputPipeline.FeedEvent(info.virtualDevice, stick == 0 ? VirtualKey::Lstick_South : VirtualKey::Rstick_South,
+				KeyStateEvent{ VirtualKeyState::Down });
 			dir.y = -1;
 		}
 
@@ -603,7 +593,8 @@ void RawInputGamepad::GamepadDeviceData::EmulateDigitalPad(int stick, float posx
 		//Release pullup detection
 		if(dir.y == 1 && cap.y - posy > responseDelta) {
 			//Send North release (Up) event here
-			inputPipeline.FeedKeyEvent(info.virtualDevice, stick == 0 ? VirtualKey::Lstick_North : VirtualKey::Rstick_North, VirtualKeyState::Up);
+			inputPipeline.FeedEvent(info.virtualDevice, stick == 0 ? VirtualKey::Lstick_North : VirtualKey::Rstick_North,
+				KeyStateEvent{ VirtualKeyState::Up });
 			dir.y = 0;
 			cap.y = 0.0f;
 		}
@@ -618,7 +609,8 @@ void RawInputGamepad::GamepadDeviceData::EmulateDigitalPad(int stick, float posx
 		//Pullup detection
 		if(dir.x == 0 && posx - cap.x > responseDelta && posx > deadLimit) {
 			//Send East Down event
-			inputPipeline.FeedKeyEvent(info.virtualDevice, stick == 0 ? VirtualKey::Lstick_East : VirtualKey::Rstick_East, VirtualKeyState::Down);
+			inputPipeline.FeedEvent(info.virtualDevice, stick == 0 ? VirtualKey::Lstick_East : VirtualKey::Rstick_East,
+				KeyStateEvent{ VirtualKeyState::Down });
 			dir.x = 1;
 		}
 		if(dir.x == 1 && posx > cap.x) {
@@ -628,7 +620,8 @@ void RawInputGamepad::GamepadDeviceData::EmulateDigitalPad(int stick, float posx
 		//Release pulldown detection
 		if(dir.x == -1 && posx - cap.x > responseDelta) {
 			//Send West release (Up) event here
-			inputPipeline.FeedKeyEvent(info.virtualDevice, stick == 0 ? VirtualKey::Lstick_West : VirtualKey::Rstick_West, VirtualKeyState::Up);
+			inputPipeline.FeedEvent(info.virtualDevice, stick == 0 ? VirtualKey::Lstick_West : VirtualKey::Rstick_West,
+				KeyStateEvent{ VirtualKeyState::Up });
 			dir.x = 0;
 			cap.x = 0.0f;
 		}
@@ -642,7 +635,8 @@ void RawInputGamepad::GamepadDeviceData::EmulateDigitalPad(int stick, float posx
 		//Pulldown detection
 		if(dir.x == 0 && cap.x - posx > responseDelta && posx < -deadLimit) {
 			//Send West Down event
-			inputPipeline.FeedKeyEvent(info.virtualDevice, stick == 0 ? VirtualKey::Lstick_West : VirtualKey::Rstick_West, VirtualKeyState::Down);
+			inputPipeline.FeedEvent(info.virtualDevice, stick == 0 ? VirtualKey::Lstick_West : VirtualKey::Rstick_West,
+				KeyStateEvent{ VirtualKeyState::Down });
 			dir.x = -1;
 		}
 
@@ -653,7 +647,8 @@ void RawInputGamepad::GamepadDeviceData::EmulateDigitalPad(int stick, float posx
 		//Release pullup detection
 		if(dir.x == 1 && cap.x - posx > responseDelta) {
 			//Send East release (Up) event here
-			inputPipeline.FeedKeyEvent(info.virtualDevice, stick == 0 ? VirtualKey::Lstick_East : VirtualKey::Rstick_East, VirtualKeyState::Up);
+			inputPipeline.FeedEvent(info.virtualDevice, stick == 0 ? VirtualKey::Lstick_East : VirtualKey::Rstick_East,
+				KeyStateEvent{ VirtualKeyState::Up });
 			dir.x = 0;
 			cap.x = 0.0f;
 		}
@@ -678,7 +673,7 @@ void RawInputGamepad::GamepadDeviceData::XBoxTriggerEmulation(float posx, float 
 		//Is it neutral?
 		if(xBoxTrigger == 0) {
 			xBoxTrigger = 1; //LT pressed
-			inputPipeline.FeedKeyEvent(info.virtualDevice, VirtualKey::XBox_LT, VirtualKeyState::Down);
+			inputPipeline.FeedEvent(info.virtualDevice, VirtualKey::XBox_LT, KeyStateEvent{ VirtualKeyState::Down });
 #ifdef _DEBUG_GAMEPAD_DIGITAL_OUTPUT
 			WLOG(WLog::Info) << "LT Press";
 #endif
@@ -687,7 +682,7 @@ void RawInputGamepad::GamepadDeviceData::XBoxTriggerEmulation(float posx, float 
 		//Is RT pressed?
 		if(xBoxTrigger == -1) { 
 			xBoxTrigger = -2; //Disabled until posx = 0
-			inputPipeline.FeedKeyEvent(info.virtualDevice, VirtualKey::XBox_RT, VirtualKeyState::Up);
+			inputPipeline.FeedEvent(info.virtualDevice, VirtualKey::XBox_RT, KeyStateEvent{ VirtualKeyState::Up });
 #ifdef _DEBUG_GAMEPAD_DIGITAL_OUTPUT
 			WLOG(WLog::Info) << "RT Release";
 #endif
@@ -697,7 +692,7 @@ void RawInputGamepad::GamepadDeviceData::XBoxTriggerEmulation(float posx, float 
 		//Is it neutral?
 		if(xBoxTrigger == 0) {
 			xBoxTrigger = -1; //RT pressed
-			inputPipeline.FeedKeyEvent(info.virtualDevice, VirtualKey::XBox_RT, VirtualKeyState::Down);
+			inputPipeline.FeedEvent(info.virtualDevice, VirtualKey::XBox_RT, KeyStateEvent{ VirtualKeyState::Down });
 #ifdef _DEBUG_GAMEPAD_DIGITAL_OUTPUT
 			WLOG(WLog::Info) << "RT Press";
 #endif
@@ -706,7 +701,7 @@ void RawInputGamepad::GamepadDeviceData::XBoxTriggerEmulation(float posx, float 
 		//Is LT pressed?
 		if(xBoxTrigger == 1) {
 			xBoxTrigger = 2; //Disabled until posx = 0
-			inputPipeline.FeedKeyEvent(info.virtualDevice, VirtualKey::XBox_LT, VirtualKeyState::Up);
+			inputPipeline.FeedEvent(info.virtualDevice, VirtualKey::XBox_LT, KeyStateEvent{ VirtualKeyState::Up });
 #ifdef _DEBUG_GAMEPAD_DIGITAL_OUTPUT
 			WLOG(WLog::Info) << "LT Release";
 #endif
@@ -717,14 +712,18 @@ void RawInputGamepad::GamepadDeviceData::XBoxTriggerEmulation(float posx, float 
 	if(posx < 0.0f) {
 		posx = -posx;
 		deltax = -deltax;
-		inputPipeline.FeedCursorPositionAndDelta(info.virtualDevice, VirtualKey::XBox_RTrigger, posx, posx, posx, deltax, deltax, deltax);
+		inputPipeline.FeedEvent(info.virtualDevice, VirtualKey::XBox_RTrigger,
+			CursorPosDeltaEvent{ Vector3{ posx, posx, posx }, Vector3{ deltax, deltax, deltax } });
 	}
 	else if(posx > 0.0f) {
-		inputPipeline.FeedCursorPositionAndDelta(info.virtualDevice, VirtualKey::XBox_LTrigger, posx, posx, posx, deltax, deltax, deltax);
+		inputPipeline.FeedEvent(info.virtualDevice, VirtualKey::XBox_LTrigger,
+			CursorPosDeltaEvent{ Vector3{ posx, posx, posx }, Vector3{ deltax, deltax, deltax } });
 	}
 	else if(posx == 0.0f) {
-		inputPipeline.FeedCursorPositionAndDelta(info.virtualDevice, VirtualKey::XBox_LTrigger, posx, posx, posx, deltax, deltax, deltax);
-		inputPipeline.FeedCursorPositionAndDelta(info.virtualDevice, VirtualKey::XBox_RTrigger, posx, posx, posx, deltax, deltax, deltax);
+		inputPipeline.FeedEvent(info.virtualDevice, VirtualKey::XBox_LTrigger,
+			CursorPosDeltaEvent{ Vector3{ posx, posx, posx }, Vector3{ deltax, deltax, deltax } });
+		inputPipeline.FeedEvent(info.virtualDevice, VirtualKey::XBox_RTrigger,
+			CursorPosDeltaEvent{ Vector3{ posx, posx, posx }, Vector3{ deltax, deltax, deltax } });
 	}
 }
 
@@ -1003,12 +1002,14 @@ int RawInputGamepad::FeedSyncInput(UINT msg, WPARAM wparam, LPARAM lparam, Input
 		//Window has been deactivated. Release any held keys.
 		if(LOWORD(wparam) == WA_INACTIVE) {
 			for(auto const &pad : gamepadDevices) {
-				inputPipeline.FeedDeviceEvent(pad.info.virtualDevice, DeviceState::FocusLost);
+				inputPipeline.FeedEvent(pad.info.virtualDevice, VirtualKey::None,
+					DeviceStateEvent{ DeviceState::FocusLost });
 			}
 		}
 		else if (LOWORD(wparam) == WA_ACTIVE || LOWORD(wparam) == WA_CLICKACTIVE) {
 			for (auto const& pad : gamepadDevices) {
-				inputPipeline.FeedDeviceEvent(pad.info.virtualDevice, DeviceState::FocusGained);
+				inputPipeline.FeedEvent(pad.info.virtualDevice, VirtualKey::None,
+					DeviceStateEvent{ DeviceState::FocusGained });
 			}
 		}
 		//Don't tell that the message has been processed. Someone outside may want it too!
@@ -1071,7 +1072,7 @@ RawInputGamepad::GamepadDeviceData* RawInputGamepad::FindGamepad(GamepadId gamep
 
 void RawInputGamepad::FlushDeviceEvents(InputPipeline& inputPipeline) {
 	for (auto& event : deviceEvents) {
-		inputPipeline.FeedDeviceEvent(event.first, event.second);
+		inputPipeline.FeedEvent(event.first, VirtualKey::None, DeviceStateEvent{ event.second });
 	}
 	deviceEvents.clear();
 }

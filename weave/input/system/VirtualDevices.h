@@ -78,11 +78,31 @@ namespace weave::input {
 		Gamepad14,
 		Gamepad15,
 		_Last_Gamepad = Gamepad15,
+		Midi,
+		_First_Midi = Midi,
+		Midi0 = Midi,
+		Midi1,
+		Midi2,
+		Midi3,
+		Midi4,
+		Midi5,
+		Midi6,
+		Midi7,
+		Midi8,
+		Midi9,
+		Midi10,
+		Midi11,
+		Midi12,
+		Midi13,
+		Midi14,
+		Midi15,
+		_Last_Midi = Midi15,
 		_MouseCount = (_Last_Mouse - _First_Mouse) + 1,
 		_KeyboardCount = (_Last_Keyboard - _First_Keyboard) + 1,
 		_GamepadCount = (_Last_Gamepad - _First_Gamepad) + 1,
+		_MidiCount = (_Last_Midi - _First_Midi) + 1,
 		_First = None,
-		_Last = Gamepad15,
+		_Last = Midi15,
 		_Count = (_Last - _First) + 1
 	};
 	
@@ -109,6 +129,9 @@ namespace weave::input {
 	
 	//Returns true if the device is a gamepad
 	bool IsGamepadDevice(VirtualDevice dev);
+	
+	//Returns true if the device is a midi device
+	bool IsMidiDevice(VirtualDevice dev);
 
 	//Offsets a keyvalue by a number by casting it to uint32_t and then back to VirtualKey. Use with caution.
 	inline VirtualDevice OffsetDevice(VirtualDevice dev, uint32_t offset) {

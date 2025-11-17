@@ -60,8 +60,10 @@
 #include <cmath>
 #include <chrono>
 #include <vector>
+#include <cstddef>
 #include <cstdint>
 #include <atomic>
+#include <mutex>
 #include <filesystem>
 #include <system_error>
 #include <array>
@@ -118,16 +120,34 @@ std::array<float, 3> HslToRgb(float h, float s, float l) {
 }
 
 struct InputEffectSharedState {
-	std::atomic<float> hue{0.58f};
-	std::atomic<float> pulse{0.0f};
-	std::atomic<float> sparkle{0.0f};
-	std::atomic<bool> rainbow{false};
+	static constexpr size_t kBarCount = 108;
+	struct MidiBar {
+		float targetHeight{ 0.0f };
+		uint8_t note{ 0 };
+		bool active{ false };
+		float highlight{ 0.0f };
+	};
+
+	std::array<MidiBar, kBarCount> bars{};
+	std::array<bool, 128> noteActive{};
+	mutable std::mutex barsMutex;
 };
 
 InputEffectSharedState& GetInputEffectSharedState() {
 	static InputEffectSharedState state;
 	return state;
 }
+
+struct MyBuffer {
+	float color[4] = { 0.1f, -0.5f, 0.0f, 1.0f };
+	float crap[4] = { 0.2f, 0.3f, 0.4f, 0.5f };
+	float x = 1.0f;
+};
+
+struct BarVertex {
+	float position[2];
+	float color[3];
+};
 
 } // namespace
 
@@ -605,6 +625,22 @@ public:
 			std::cout << std::format("{}, {}, {}", delta.x, delta.y, delta.z);
 
 		}
+		else if (inputData.HasMidiNote()) {
+			auto event = inputData.GetMidiNote();
+			std::cout << std::format("{}, {}, {}, {}", event.note, event.channel, event.velocity, event.pressed);
+		}
+		else if (inputData.HasMidiControl()) {
+			auto event = inputData.GetMidiControl();
+			std::cout << std::format("{}, {}, {}", event.control, event.channel, event.value);
+		}
+		else if (inputData.HasMidiPitchBend()) {
+			auto event = inputData.GetMidiPitchBend();
+			std::cout << std::format("{}, {}", event.channel, event.value);
+		}
+		else if (inputData.HasMidiProgram()) {
+			auto event = inputData.GetMidiProgram();
+			std::cout << std::format("{}, {}", event.channel, event.program);
+		}
 
 		else if (inputData.HasDeviceState()) {
 			std::cout << " -> " << weave::input::DeviceStateName(inputData.GetDeviceState());
@@ -614,98 +650,51 @@ public:
 	}
 };
 class MyInputEffect : public weave::input::InputProcessor {
-
-private:
 	InputEffectSharedState& sharedState;
-	std::array<weave::input::VirtualKey, 10> konami{
-		weave::input::VirtualKey::Up,
-		weave::input::VirtualKey::Up,
-		weave::input::VirtualKey::Down,
-		weave::input::VirtualKey::Down,
-		weave::input::VirtualKey::Left,
-		weave::input::VirtualKey::Right,
-		weave::input::VirtualKey::Left,
-		weave::input::VirtualKey::Right,
-		weave::input::VirtualKey::B,
-		weave::input::VirtualKey::A
-	};
-	std::size_t konamiIndex = 0;
 
-	void HandleKeyboard(weave::input::VirtualKey key) {
-		AddPulse(0.12f);
-		if (key >= weave::input::VirtualKey::A && key <= weave::input::VirtualKey::Z) {
-			const float delta = 0.004f * (1.0f + static_cast<float>(static_cast<int>(key) - static_cast<int>(weave::input::VirtualKey::A)));
-			NudgeHue(delta);
+	void UpdateBar(uint8_t note, uint8_t velocity, bool pressed) {
+		auto index = static_cast<size_t>(note) % InputEffectSharedState::kBarCount;
+		float normalizedVelocity = static_cast<float>(velocity) / 127.0f;
+		std::scoped_lock lock(sharedState.barsMutex);
+		auto& bar = sharedState.bars[index];
+		bar.note = note;
+		bar.active = pressed;
+		bar.targetHeight = pressed ? normalizedVelocity : 0.0f;
+		if (note < sharedState.noteActive.size()) {
+			sharedState.noteActive[note] = pressed;
 		}
-
-		if (key == weave::input::VirtualKey::Space) {
-			bool current = sharedState.rainbow.load(std::memory_order_relaxed);
-			sharedState.rainbow.store(!current, std::memory_order_relaxed);
-		} else if (key == weave::input::VirtualKey::Esc) {
-			sharedState.rainbow.store(false, std::memory_order_relaxed);
-		}
-
-		if (key == weave::input::VirtualKey::Vary5 || key == weave::input::VirtualKey::Plus) {
-			BoostSparkle(0.5f);
-		}
-
-		UpdateKonami(key);
+		DetectChordsLocked();
 	}
 
-	void AddPulse(float amount) {
-		float current = sharedState.pulse.load(std::memory_order_relaxed);
-		while (true) {
-			float next = std::min(1.5f, current + amount);
-			if (sharedState.pulse.compare_exchange_weak(current, next, std::memory_order_relaxed, std::memory_order_relaxed)) {
-				break;
-			}
+	void HighlightNoteLocked(uint8_t note) {
+		if (InputEffectSharedState::kBarCount == 0) {
+			return;
 		}
+		size_t index = static_cast<size_t>(note) % InputEffectSharedState::kBarCount;
+		sharedState.bars[index].highlight = 1.0f;
 	}
 
-	void BoostSparkle(float amount) {
-		float current = sharedState.sparkle.load(std::memory_order_relaxed);
-		while (true) {
-			float next = std::clamp(current + amount, 0.0f, 1.5f);
-			if (sharedState.sparkle.compare_exchange_weak(current, next, std::memory_order_relaxed, std::memory_order_relaxed)) {
-				break;
+	void DetectChordsLocked() {
+		auto const limit = sharedState.noteActive.size();
+		for (size_t i = 0; i < limit; ++i) {
+			if (!sharedState.noteActive[i]) {
+				continue;
+			}
+			if (i + 4 < limit && i + 7 < limit) {
+				if (sharedState.noteActive[i + 4] && sharedState.noteActive[i + 7]) {
+					HighlightNoteLocked(static_cast<uint8_t>(i));
+					HighlightNoteLocked(static_cast<uint8_t>(i + 4));
+					HighlightNoteLocked(static_cast<uint8_t>(i + 7));
+				}
+			}
+			if (i + 3 < limit && i + 7 < limit) {
+				if (sharedState.noteActive[i + 3] && sharedState.noteActive[i + 7]) {
+					HighlightNoteLocked(static_cast<uint8_t>(i));
+					HighlightNoteLocked(static_cast<uint8_t>(i + 3));
+					HighlightNoteLocked(static_cast<uint8_t>(i + 7));
+				}
 			}
 		}
-	}
-
-	void NudgeHue(float amount) {
-		float current = sharedState.hue.load(std::memory_order_relaxed);
-		while (true) {
-			float next = std::fmod(current + amount, 1.0f);
-			if (next < 0.0f) {
-				next += 1.0f;
-			}
-			if (sharedState.hue.compare_exchange_weak(current, next, std::memory_order_relaxed, std::memory_order_relaxed)) {
-				break;
-			}
-		}
-	}
-
-	void UpdateKonami(weave::input::VirtualKey key) {
-		if (konamiIndex >= konami.size()) {
-			konamiIndex = 0;
-		}
-
-		if (key == konami[konamiIndex]) {
-			++konamiIndex;
-			if (konamiIndex == konami.size()) {
-				TriggerKonami();
-				konamiIndex = 0;
-			}
-		} else {
-			konamiIndex = (key == konami.front()) ? 1u : 0u;
-		}
-	}
-
-	void TriggerKonami() {
-		sharedState.rainbow.store(true, std::memory_order_relaxed);
-		sharedState.pulse.store(1.5f, std::memory_order_relaxed);
-		sharedState.sparkle.store(1.5f, std::memory_order_relaxed);
-		std::cout << "\nKonami code unlocked rainbow mode! (Press ESC to settle down)";
 	}
 
 public:
@@ -713,14 +702,9 @@ public:
 		: sharedState(state) {}
 
 	void InputEvent(weave::input::InputEventData inputData, weave::input::InputStateMap& inputState) override {
-		if (inputData.HasVirtualKeyState()) {
-			if (inputData.device == weave::input::VirtualDevice::Keyboard &&
-				inputData.GetVirtualKeyState() == weave::input::VirtualKeyState::Down) {
-				HandleKeyboard(inputData.key);
-			} else if (inputData.device == weave::input::VirtualDevice::Mouse &&
-				inputData.GetVirtualKeyState() == weave::input::VirtualKeyState::Down) {
-				BoostSparkle(0.35f);
-			}
+		if (inputData.HasMidiNote()) {
+			auto event = inputData.GetMidiNote();
+			UpdateBar(event.note, event.velocity, event.pressed);
 		}
 
 		NextProcessor(inputData, inputState);
@@ -882,18 +866,51 @@ static void RunRenderLoop(const std::function<void()>& swapBuffers,
 
     pipeline.Create();
 
+    weave::opengl::Program midiBarProgram;
+    {
+        static constexpr char const* barVertexSrc = R"(
+#version 450 core
+layout(location = 0) in vec2 inPosition;
+layout(location = 1) in vec3 inColor;
+out vec3 vColor;
+void main() {
+    vColor = inColor;
+    gl_Position = vec4(inPosition, 0.0, 1.0);
+}
+)";
+        static constexpr char const* barFragmentSrc = R"(
+#version 450 core
+in vec3 vColor;
+layout(location = 0) out vec4 outColor;
+void main() {
+    outColor = vec4(vColor, 1.0);
+}
+)";
+        auto barVertexShader = weave::opengl::ShaderLoader::BuildSource(gl::VERTEX_SHADER, barVertexSrc);
+        auto barFragmentShader = weave::opengl::ShaderLoader::BuildSource(gl::FRAGMENT_SHADER, barFragmentSrc);
+        midiBarProgram.LinkProgram({ barVertexShader.GLId(), barFragmentShader.GLId() });
+    }
+
+    GLuint barVao = 0;
+    GLuint barVbo = 0;
+    gl::CreateVertexArrays(1, &barVao);
+    gl::CreateBuffers(1, &barVbo);
+    constexpr size_t kMaxBarVertices = InputEffectSharedState::kBarCount * 6;
+    gl::NamedBufferData(barVbo, kMaxBarVertices * sizeof(BarVertex), nullptr, gl::DYNAMIC_DRAW);
+    gl::VertexArrayVertexBuffer(barVao, 0, barVbo, 0, sizeof(BarVertex));
+    gl::EnableVertexArrayAttrib(barVao, 0);
+    gl::VertexArrayAttribFormat(barVao, 0, 2, gl::FLOAT, false, offsetof(BarVertex, position));
+    gl::VertexArrayAttribBinding(barVao, 0, 0);
+    gl::EnableVertexArrayAttrib(barVao, 1);
+    gl::VertexArrayAttribFormat(barVao, 1, 3, gl::FLOAT, false, offsetof(BarVertex, color));
+    gl::VertexArrayAttribBinding(barVao, 1, 0);
+
     struct Uniforms {
         float color[4] = { 0.1f, 0.5f, 0.2f, 1.0f };
         float color2[4] = { 0.1f, 0.5f, 0.2f, 1.0f };
         float color3[4] = { 0.5f, 0.1f, 0.1f, 1.0f };
         float crap[4] = { 0.2f, 0.3f, 0.4f, 0.5f };
     } uniforms;
-
-    struct MyBuffer {
-        float color[4] = { 0.1f, -0.5f, 0.0f, 1.0f };
-        float crap[4] = { 0.2f, 0.3f, 0.4f, 0.5f };
-        float x = 1.0f;
-    };
 
     weave::opengl::Buffer unifBuffer;
     weave::opengl::BufferData<MyBuffer> shdBuffer;
@@ -927,17 +944,7 @@ static void RunRenderLoop(const std::function<void()>& swapBuffers,
     TestNodes();
 
 	auto& inputEffectState = GetInputEffectSharedState();
-	auto dampValue = [](std::atomic<float>& value, float dt, float decayRate) {
-		float current = value.load(std::memory_order_relaxed);
-		if (current <= 0.0f) {
-			return 0.0f;
-		}
-		float next = std::max(0.0f, current - decayRate * dt);
-		if (next != current) {
-			value.store(next, std::memory_order_relaxed);
-		}
-		return next;
-	};
+	std::array<float, InputEffectSharedState::kBarCount> barVisualLevels{};
     while (!exitRequested.load()) {
         frameTracker.FrameStart();
         auto delta = interval.Snapshot();
@@ -950,25 +957,8 @@ static void RunRenderLoop(const std::function<void()>& swapBuffers,
             std::cout << '\n' << clock1.CurrentTime<int, std::chrono::milliseconds>() << '\n';
         }
 
-		float baseHue = inputEffectState.hue.load(std::memory_order_relaxed);
-		if (inputEffectState.rainbow.load(std::memory_order_relaxed)) {
-			baseHue += deltaSeconds * 0.1f;
-			if (baseHue > 1.0f) {
-				baseHue -= 1.0f;
-			}
-			inputEffectState.hue.store(baseHue, std::memory_order_relaxed);
-		}
-
-		const float pulse = dampValue(inputEffectState.pulse, deltaSeconds, 0.7f);
-		const float sparkle = dampValue(inputEffectState.sparkle, deltaSeconds, 1.2f);
-		auto rgb = HslToRgb(baseHue,
-			std::clamp(0.5f + pulse * 0.4f, 0.0f, 1.0f),
-			std::clamp(0.35f + pulse * 0.5f, 0.0f, 1.0f));
-		rgb[0] = std::clamp(rgb[0] + sparkle * 0.1f, 0.0f, 1.0f);
-		rgb[1] = std::clamp(rgb[1] + sparkle * 0.05f, 0.0f, 1.0f);
-
         defaultFb.Bind();
-        gl::ClearColor(rgb[0], rgb[1], rgb[2], 1.0f);
+        gl::ClearColor(0.02f, 0.02f, 0.03f, 1.0f);
         gl::Clear(gl::COLOR_BUFFER_BIT | gl::DEPTH_BUFFER_BIT);
 
         float ar = fb.Width() / (fb.Height() * 1.0f);
@@ -980,14 +970,83 @@ static void RunRenderLoop(const std::function<void()>& swapBuffers,
 
         unifBuffer.BindToUniforms(5);
         shdBuffer.BindToShader(3);
-        shdBuffer.data.color[0] += 0.00001f + pulse * 0.0002f;
-        shdBuffer.data.color[1] = 0.2f + sparkle * 0.5f;
+        shdBuffer.data.color[0] = 0.1f;
+        shdBuffer.data.color[1] = 0.2f;
         shdBuffer.UpdateBuffer();
 
         tex.Bind(0);
 
         mesh.RenderInstances(1);
         sphere.RenderInstances(1);
+
+		std::array<InputEffectSharedState::MidiBar, InputEffectSharedState::kBarCount> barsSnapshot;
+		{
+			std::scoped_lock lock(inputEffectState.barsMutex);
+			barsSnapshot = inputEffectState.bars;
+			for (auto& bar : inputEffectState.bars) {
+				bar.highlight = std::max(0.0f, bar.highlight - deltaSeconds * 3.0f);
+			}
+		}
+
+		std::vector<BarVertex> barVertices;
+		barVertices.reserve(InputEffectSharedState::kBarCount * 6);
+		const float spacing = 2.0f / static_cast<float>(InputEffectSharedState::kBarCount);
+		const float width = spacing * 0.6f;
+		const float baseY = -0.85f;
+		const float heightScale = 1.7f;
+		const float riseSpeed = 8.0f;
+		const float fallSpeed = 4.0f;
+
+		for (size_t i = 0; i < barsSnapshot.size(); ++i) {
+			float target = std::clamp(barsSnapshot[i].targetHeight, 0.0f, 1.0f);
+			float current = barVisualLevels[i];
+			if (current < target) {
+				current = std::min(target, current + riseSpeed * deltaSeconds);
+			} else {
+				current = std::max(0.0f, current - fallSpeed * deltaSeconds);
+			}
+			barVisualLevels[i] = current;
+			if (current <= 0.001f) {
+				continue;
+			}
+
+			float hue = std::clamp(barsSnapshot[i].note / 127.0f, 0.0f, 1.0f) * 0.83f;
+			auto barColor = HslToRgb(hue, 0.8f, 0.55f);
+			float highlightLevel = std::clamp(barsSnapshot[i].highlight, 0.0f, 1.0f);
+			if (highlightLevel > 0.0f) {
+				barColor[0] = std::lerp(barColor[0], 1.0f, highlightLevel);
+				barColor[1] = std::lerp(barColor[1], 1.0f, highlightLevel);
+				barColor[2] = std::lerp(barColor[2], 1.0f, highlightLevel);
+			}
+
+			const float left = -1.0f + static_cast<float>(i) * spacing + (spacing - width) * 0.5f;
+			const float right = left + width;
+			const float top = std::min(0.95f, baseY + current * heightScale);
+
+			auto pushVertex = [&](float x, float y) {
+				barVertices.push_back(BarVertex{ { x, y }, { barColor[0], barColor[1], barColor[2] } });
+			};
+
+			pushVertex(left, baseY);
+			pushVertex(right, baseY);
+			pushVertex(right, top);
+			pushVertex(left, baseY);
+			pushVertex(right, top);
+			pushVertex(left, top);
+		}
+
+		if (!barVertices.empty()) {
+			gl::NamedBufferSubData(barVbo, 0, barVertices.size() * sizeof(BarVertex), barVertices.data());
+			midiBarProgram.Use();
+			gl::BindVertexArray(barVao);
+			gl::Disable(gl::DEPTH_TEST);
+			gl::Enable(gl::BLEND);
+			gl::BlendFunc(gl::SRC_ALPHA, gl::ONE_MINUS_SRC_ALPHA);
+			gl::DrawArrays(gl::TRIANGLES, 0, static_cast<GLsizei>(barVertices.size()));
+			gl::Disable(gl::BLEND);
+			gl::Enable(gl::DEPTH_TEST);
+			gl::BindVertexArray(0);
+		}
 
         swapBuffers();
     }
@@ -1153,7 +1212,7 @@ int RunWin32Harness()
         for (auto const& msgEvent : messages) {
             std::cout << std::format("\nMessage: {} [{} packages]", msgEvent.messageId, msgEvent.report.size());
             for (auto const& keyData : msgEvent.report) {
-                auto cursor = keyData.cursor.value_or(weave::input::CursorData{});
+                auto cursor = keyData.cursor.value_or(weave::input::CursorPayload{});
                 std::cout << std::format(" [{} : {} : ({},{},{})]", weave::input::VirtualDeviceName(keyData.device), weave::input::VirtualKeyName(keyData.key), cursor.position.x, cursor.position.y, cursor.position.z);
             }
         }
@@ -1206,7 +1265,7 @@ int RunWaylandHarness()
     weave::input::InputPipeline inputPipeline;
     weave::input::wayland::WaylandGamepadFeed gamepadFeed;
 	weave::input::wayland::WaylandMidiFeed midiFeed;
-	midiFeed.Test();
+	
 
     {
         auto processor = std::make_shared<MyInputLogger>();
@@ -1226,13 +1285,11 @@ int RunWaylandHarness()
         inputPipeline.AddProcessor(processor);
     }
 
-    auto enumeratedPads = gamepadFeed.EnumerateGamepads(&inputPipeline);
-    if (enumeratedPads == 0) {
-        std::cerr << "Wayland gamepad feed active but no controllers detected (check permissions?).\n";
+    if (gamepadFeed.EnumerateGamepads(inputPipeline) == 0) {
+        std::cout << "No Gamepad devices found.\n";
     }
-
-    auto info = gamepadFeed.GetEnumeratedGamepadInfo();
-    if (!info.empty()) {
+    
+    if (auto info = gamepadFeed.GetEnumeratedGamepadInfo(); !info.empty()) {
         std::cout << "\nGamepads: " << info.size();
         for (auto const& pad : info) {
             std::cout << std::format(
@@ -1243,6 +1300,24 @@ int RunWaylandHarness()
                 pad.productId,
                 weave::input::VirtualDeviceName(pad.virtualDevice),
                 weave::input::gamepad::LayoutName(pad.currentLayout));
+        }
+        std::cout << '\n';
+    }
+
+
+	if(midiFeed.EnumerateMidiSources(true, inputPipeline) == 0) {
+		std::cout << "No MIDI devices found\n";
+	}
+
+    if (auto midiInfo = midiFeed.GetAllMidiSources(); !midiInfo.empty()) {
+        std::cout << "\nMidi: " << midiInfo.size();
+        for (auto const& midi : midiInfo) {
+            std::cout << std::format(
+                "\n\tName: {}\n\tHardware: {}\n\tClient: {}\n\tPort: {}",
+                midi.name.empty() ? "[Unnamed]" : midi.name,
+                midi.isHardware,
+                midi.client,
+				midi.port);
         }
         std::cout << '\n';
     }
@@ -1263,7 +1338,7 @@ int RunWaylandHarness()
             for (auto const& msg : messages) {
                 std::cout << std::format("\nMessage: {} [{} packages]", msg.messageId, msg.report.size());
                 for (auto const& keyData : msg.report) {
-                    auto cursor = keyData.cursor.value_or(weave::input::CursorData{});
+                    auto cursor = keyData.cursor.value_or(weave::input::CursorPayload{});
                     std::cout << std::format(" [{} : {} : ({},{},{})]",
                                              weave::input::VirtualDeviceName(keyData.device),
                                              weave::input::VirtualKeyName(keyData.key),
@@ -1279,7 +1354,13 @@ int RunWaylandHarness()
 
 	std::jthread inputThread([&] {
 		while(!exitRequested.load()) {
-        	gamepadFeed.PollInput(inputPipeline, std::chrono::milliseconds(50));
+        	gamepadFeed.PollInput(std::chrono::milliseconds(50));
+		}
+    });
+
+	std::jthread midiThread([&] {
+		while(!exitRequested.load()) {
+        	midiFeed.PollInput(std::chrono::milliseconds(50));
 		}
     });
 

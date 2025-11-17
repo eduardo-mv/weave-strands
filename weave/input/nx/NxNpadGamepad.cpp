@@ -315,7 +315,8 @@ int NxNpadGamepad::GamepadDeviceData::FeedPooledInput(InputPipeline& inputPipeli
 				if(currData.buttons[i] != prevData.buttons[i]) {
 					VirtualKey key = (horizontalMode && (style.Test<nn::hid::NpadStyleJoyLeft>() || style.Test<nn::hid::NpadStyleJoyRight>()) ? vButtonsSingleHorizontal[i] : vButtons[i]);
 					//Button state changed
-					inputPipeline.FeedKeyEvent(key, (currData.buttons.Test(i) ? VirtualKeyState::Down : VirtualKeyState::Up), vDevice);
+					inputPipeline.FeedEvent(vDevice, key,
+						KeyStateEvent{ currData.buttons.Test(i) ? VirtualKeyState::Down : VirtualKeyState::Up });
 #ifdef _DEBUG_GAMEPAD_DIGITAL_OUTPUT
 					PrintButtonPress(key, (currData.buttons.Test(i) ? VirtualKeyState::Down : VirtualKeyState::Up));
 #endif
@@ -341,7 +342,8 @@ int NxNpadGamepad::GamepadDeviceData::FeedPooledInput(InputPipeline& inputPipeli
 				x = -x;
 				deltax = -deltax;
 			}
-			inputPipeline.FeedCursorPositionAndDelta(x, y, 0.0f, deltax, deltay, 0.0f, VirtualKey::Lstick, vDevice);
+			inputPipeline.FeedEvent(vDevice, VirtualKey::Lstick,
+				CursorPosDeltaEvent{ Vector3{ x, y, 0.0f }, Vector3{ deltax, deltay, 0.0f } });
 		}
 
 		//Right
@@ -366,7 +368,8 @@ int NxNpadGamepad::GamepadDeviceData::FeedPooledInput(InputPipeline& inputPipeli
 					deltay = -deltay;
 				}
 			}
-			inputPipeline.FeedCursorPositionAndDelta(x, y, 0.0f, deltax, deltay, 0.0f, stick, vDevice);
+			inputPipeline.FeedEvent(vDevice, stick,
+				CursorPosDeltaEvent{ Vector3{ x, y, 0.0f }, Vector3{ deltax, deltay, 0.0f } });
 		}
 	}
 

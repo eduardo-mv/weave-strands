@@ -46,7 +46,7 @@ public:
 
 	~WaylandGamepadFeed();
 
-	size_t EnumerateGamepads(InputPipeline* pipeline);
+	size_t EnumerateGamepads(InputPipeline& pipeline);
 
 	size_t GetEnumeratedGamepadCount() const;
 	std::vector<GamepadInfo> GetEnumeratedGamepadInfo() const;
@@ -58,7 +58,7 @@ public:
 	void SetDeadzones(GamepadId const& id, float leftDeadzone, float rightDeadzone);
 	void SetLayout(GamepadId const& id, GamepadLayout layout);
 
-	void PollInput(InputPipeline& pipeline, std::chrono::milliseconds blockTimeout);
+	void PollInput(std::chrono::milliseconds blockTimeout);
 
 private:
 	struct GamepadDevice {
@@ -88,19 +88,20 @@ private:
 	udev_monitor* monitor = nullptr;
 	int monitorFd = -1;
 	std::vector<pollfd> pollFds; //Cache for the polling
+	InputPipeline *inputPipeline{};
 	
 	bool InitializeUdev();
-	void HandleUdevEvents(InputPipeline& pipeline);
-	bool AddDevice(const char* devnode, InputPipeline* pipeline);
-	void RemoveDevice(const std::string& devnode, InputPipeline& pipeline);
+	void HandleUdevEvents();
+	bool AddDevice(const char* devnode);
+	void RemoveDevice(const std::string& devnode);
 	GamepadDevice* FindDeviceById(GamepadId const& id);
 
-	void ProcessDevice(GamepadDevice& device, InputPipeline& pipeline);
-	void ProcessEvent(GamepadDevice& device, const input_event& ev, InputPipeline& pipeline);
-	void ProcessAbsEvent(GamepadDevice& device, const input_event& ev, InputPipeline& pipeline);
-	void ProcessKeyEvent(GamepadDevice& device, const input_event& ev, InputPipeline& pipeline);
+	void ProcessDevice(GamepadDevice& device);
+	void ProcessEvent(GamepadDevice& device, const input_event& ev);
+	void ProcessAbsEvent(GamepadDevice& device, const input_event& ev);
+	void ProcessKeyEvent(GamepadDevice& device, const input_event& ev);
 
-	void UpdateHat(GamepadDevice& device, bool horizontal, int value, InputPipeline& pipeline);
+	void UpdateHat(GamepadDevice& device, bool horizontal, int value);
 
 	static float NormalizeStick(const input_absinfo& info, int value);
 	static float NormalizeTrigger(const input_absinfo& info, int value);

@@ -34,7 +34,7 @@ namespace weave::input::wayland {
  *      poll loop.
  *   4. ProcessDevice() repeatedly calls libevdev_next_event (which internally reads
  *      from the fd via read() and handles SYN_DROPPED recovery) and forwards the
- *      translated events to the input pipeline.
+ *      translated events to the input inputPipeline->
  */
 
 namespace {
@@ -114,7 +114,7 @@ WaylandGamepadFeed::~WaylandGamepadFeed() {
 }
 
 // Entry point: bootstrap udev + monitoring socket, then spawn the poll loop.
-size_t WaylandGamepadFeed::EnumerateGamepads(InputPipeline* pipeline) {
+size_t WaylandGamepadFeed::EnumerateGamepads(InputPipeline& pipeline) {
 	
 	if (!udevCtx) {
 		if(!InitializeUdev()) {
@@ -126,6 +126,8 @@ size_t WaylandGamepadFeed::EnumerateGamepads(InputPipeline* pipeline) {
 	if (!enumerate) {
 		return 0;
 	}
+
+	inputPipeline = &pipeline;
 
 	udev_enumerate_add_match_subsystem(enumerate, "input");
 	udev_enumerate_add_match_property(enumerate, "ID_INPUT_JOYSTICK", "1");
@@ -142,7 +144,7 @@ size_t WaylandGamepadFeed::EnumerateGamepads(InputPipeline* pipeline) {
 			continue;
 		}
 		if (IsJoystickDevice(dev)) {
-			AddDevice(udev_device_get_devnode(dev), pipeline);
+			AddDevice(udev_device_get_devnode(dev));
 		}
 		udev_device_unref(dev);
 	}
@@ -151,7 +153,7 @@ size_t WaylandGamepadFeed::EnumerateGamepads(InputPipeline* pipeline) {
 	return GetEnumeratedGamepadCount();
 }
 
-void WaylandGamepadFeed::PollInput(InputPipeline& pipeline, std::chrono::milliseconds blockTimeout) {
+void WaylandGamepadFeed::PollInput(std::chrono::milliseconds blockTimeout) {
 	const bool hasMonitor = monitorFd >= 0;
 	pollFds.clear();
 	{
@@ -188,11 +190,11 @@ void WaylandGamepadFeed::PollInput(InputPipeline& pipeline, std::chrono::millise
 			const auto revents = pollFds[pollIndex].revents;
 
 			if (revents & (POLLERR | POLLHUP | POLLNVAL)) {
-				RemoveDevice(device.info.id.deviceNode, pipeline);
+				RemoveDevice(device.info.id.deviceNode);
 				continue;
 			}
 			if (revents & POLLIN) {
-				ProcessDevice(device, pipeline);
+				ProcessDevice(device);
 			}
 
 			++pollIndex;
@@ -201,7 +203,7 @@ void WaylandGamepadFeed::PollInput(InputPipeline& pipeline, std::chrono::millise
 
 	if (hasMonitor && !pollFds.empty()) {
 		if (pollFds.back().revents & POLLIN) {
-			HandleUdevEvents(pipeline);
+			HandleUdevEvents();
 		}
 	}
 }
@@ -237,7 +239,7 @@ bool WaylandGamepadFeed::InitializeUdev() {
 	return true;
 }
 
-void WaylandGamepadFeed::HandleUdevEvents(InputPipeline& pipeline) {
+void WaylandGamepadFeed::HandleUdevEvents() {
 	if (!monitor) {
 		return;
 	}
@@ -253,12 +255,12 @@ void WaylandGamepadFeed::HandleUdevEvents(InputPipeline& pipeline) {
 		if (subsystem && std::strcmp(subsystem, "input") == 0 && action) {
 			if (std::strcmp(action, "add") == 0) {
 				if (IsJoystickDevice(dev)) {
-					AddDevice(udev_device_get_devnode(dev), &pipeline);
+					AddDevice(udev_device_get_devnode(dev));
 				}
 			} else if (std::strcmp(action, "remove") == 0) {
 				const char* devnode = udev_device_get_devnode(dev);
 				if (devnode) {
-					RemoveDevice(devnode, pipeline);
+					RemoveDevice(devnode);
 				}
 			}
 		}
@@ -352,7 +354,7 @@ void WaylandGamepadFeed::SetDeadzones(GamepadId const& id, float leftDeadzone, f
 }
 
 // Open the /dev/input node, let libevdev run the ioctl() capability probes, then register the fd.
-bool WaylandGamepadFeed::AddDevice(const char* devnode, InputPipeline* pipeline) {
+bool WaylandGamepadFeed::AddDevice(const char* devnode) {
 	if (!devnode) {
 		return false;
 	}
@@ -426,22 +428,20 @@ bool WaylandGamepadFeed::AddDevice(const char* devnode, InputPipeline* pipeline)
 	newDevice.info.virtualDevice = targetDevice;
 	devices.emplace_back(std::move(newDevice));
 
-	if(pipeline) {
-		pipeline->FeedDeviceEvent(targetDevice, DeviceState::Idle);
-	}
+	inputPipeline->FeedEvent(targetDevice, VirtualKey::None, DeviceStateEvent{ DeviceState::Idle });
 
 	std::cout << "[WaylandGamepadFeed] Added gamepad " << devnode << " -> "
 	          << VirtualDeviceName(targetDevice) << '\n';
 	return true;
 }
 
-void WaylandGamepadFeed::RemoveDevice(const std::string& devnode, InputPipeline& pipeline) {
+void WaylandGamepadFeed::RemoveDevice(const std::string& devnode) {
 	std::shared_ptr<GamepadDevice> removed;
 	{
 		std::scoped_lock lock(deviceMutex);
-		std::erase_if(devices, [this, &devnode, &pipeline](auto const& pad) {
+		std::erase_if(devices, [this, &devnode](auto const& pad) {
 			if(pad.info.id.deviceNode == devnode) {
-				pipeline.FeedDeviceEvent(pad.info.virtualDevice, DeviceState::Disconnected);
+				inputPipeline->FeedEvent(pad.info.virtualDevice, VirtualKey::None, DeviceStateEvent{ DeviceState::Disconnected });
 				if (pad.evdev) {
 					libevdev_free(pad.evdev);
 				}
@@ -458,7 +458,7 @@ void WaylandGamepadFeed::RemoveDevice(const std::string& devnode, InputPipeline&
 }
 
 // Drive libevdev_next_event()/libevdev_read_status_sync and forward the resulting input_event records.
-void WaylandGamepadFeed::ProcessDevice(GamepadDevice& device, InputPipeline& pipeline) {
+void WaylandGamepadFeed::ProcessDevice(GamepadDevice& device) {
 	if (!device.evdev) {
 		return;
 	}
@@ -471,39 +471,39 @@ void WaylandGamepadFeed::ProcessDevice(GamepadDevice& device, InputPipeline& pip
 		}
 
 		if (rc == LIBEVDEV_READ_STATUS_SUCCESS) {
-			ProcessEvent(device, ev, pipeline);
+			ProcessEvent(device, ev);
 		}
 
 		while (rc == LIBEVDEV_READ_STATUS_SYNC) {
-			ProcessEvent(device, ev, pipeline);
+			ProcessEvent(device, ev);
 			rc = libevdev_next_event(device.evdev, LIBEVDEV_READ_FLAG_SYNC, &ev);
 		}
 	}
 }
 
-void WaylandGamepadFeed::ProcessEvent(GamepadDevice& device, const input_event& ev, InputPipeline& pipeline) {
+void WaylandGamepadFeed::ProcessEvent(GamepadDevice& device, const input_event& ev) {
 	switch (ev.type) {
 	case EV_ABS:
-		ProcessAbsEvent(device, ev, pipeline);
+		ProcessAbsEvent(device, ev);
 		break;
 	case EV_KEY:
-		ProcessKeyEvent(device, ev, pipeline);
+		ProcessKeyEvent(device, ev);
 		break;
 	default:
 		break;
 	}
 }
 
-void WaylandGamepadFeed::ProcessAbsEvent(GamepadDevice& device, const input_event& ev, InputPipeline& pipeline) {
+void WaylandGamepadFeed::ProcessAbsEvent(GamepadDevice& device, const input_event& ev) {
 	const input_absinfo* info = libevdev_get_abs_info(device.evdev, ev.code);
 
 	// Hat values
 	switch(ev.code) {
 		case ABS_HAT0X:
-		UpdateHat(device, true, ev.value, pipeline);
+		UpdateHat(device, true, ev.value);
 		return;
 	case ABS_HAT0Y:
-		UpdateHat(device, false, ev.value, pipeline);
+		UpdateHat(device, false, ev.value);
 		return;
 	default:
 		break;
@@ -520,7 +520,8 @@ void WaylandGamepadFeed::ProcessAbsEvent(GamepadDevice& device, const input_even
 		float delta = value - device.leftX;
 		device.leftX = value;
 		if(delta != 0.0f) {
-			pipeline.FeedCursorPositionAndDelta(device.info.virtualDevice, VirtualKey::Lstick, device.leftX, device.leftY, 0.0f, delta, 0.0f, 0.0f);
+			inputPipeline->FeedEvent(device.info.virtualDevice, VirtualKey::Lstick,
+				CursorPosDeltaEvent{ Vector3{ device.leftX, device.leftY, 0.0f }, Vector3{ delta, 0.0f, 0.0f } });
 		}
 		break;
 	}
@@ -528,7 +529,8 @@ void WaylandGamepadFeed::ProcessAbsEvent(GamepadDevice& device, const input_even
 		float delta = value - device.leftY;
 		device.leftY = value;
 		if(delta != 0.0f) {
-			pipeline.FeedCursorPositionAndDelta(device.info.virtualDevice, VirtualKey::Lstick, device.leftX, device.leftY, 0.0f, 0.0f, delta, 0.0f);
+			inputPipeline->FeedEvent(device.info.virtualDevice, VirtualKey::Lstick,
+				CursorPosDeltaEvent{ Vector3{ device.leftX, device.leftY, 0.0f }, Vector3{ 0.0f, delta, 0.0f } });
 		}
 		break;
 	}
@@ -536,7 +538,8 @@ void WaylandGamepadFeed::ProcessAbsEvent(GamepadDevice& device, const input_even
 		float delta = value - device.rightX;
 		device.rightX = value;
 		if(delta != 0.0f) {
-			pipeline.FeedCursorPositionAndDelta(device.info.virtualDevice, VirtualKey::Rstick, device.rightX, device.rightY, 0.0f, delta, 0.0f, 0.0f);
+			inputPipeline->FeedEvent(device.info.virtualDevice, VirtualKey::Rstick,
+				CursorPosDeltaEvent{ Vector3{ device.rightX, device.rightY, 0.0f }, Vector3{ delta, 0.0f, 0.0f } });
 		}
 		break;
 	}
@@ -544,7 +547,8 @@ void WaylandGamepadFeed::ProcessAbsEvent(GamepadDevice& device, const input_even
 		float delta = value - device.rightY;
 		device.rightY = value;
 		if(delta != 0.0f) {
-			pipeline.FeedCursorPositionAndDelta(device.info.virtualDevice, VirtualKey::Rstick, device.rightX, device.rightY, 0.0f, 0.0f, delta, 0.0f);
+			inputPipeline->FeedEvent(device.info.virtualDevice, VirtualKey::Rstick,
+				CursorPosDeltaEvent{ Vector3{ device.rightX, device.rightY, 0.0f }, Vector3{ 0.0f, delta, 0.0f } });
 		}
 		break;
 	}
@@ -552,61 +556,61 @@ void WaylandGamepadFeed::ProcessAbsEvent(GamepadDevice& device, const input_even
 		float value = NormalizeTrigger(*info, ev.value);
 		float delta = value - device.triggerL;
 		device.triggerL = value;
-		pipeline.FeedKeyPressure(device.info.virtualDevice, VirtualKey::Trigger0, value);
-		pipeline.FeedKeyPressureDelta(device.info.virtualDevice, VirtualKey::Trigger0, delta);
+		inputPipeline->FeedEvent(device.info.virtualDevice, VirtualKey::Trigger0, PressureEvent{ value });
+		inputPipeline->FeedEvent(device.info.virtualDevice, VirtualKey::Trigger0, PressureDeltaEvent{ delta });
 		break;
 	}
 	case ABS_RZ: {
 		float value = NormalizeTrigger(*info, ev.value);
 		float delta = value - device.triggerR;
 		device.triggerR = value;
-		pipeline.FeedKeyPressure(device.info.virtualDevice, VirtualKey::Trigger1, value);
-		pipeline.FeedKeyPressureDelta(device.info.virtualDevice, VirtualKey::Trigger1, delta);
+		inputPipeline->FeedEvent(device.info.virtualDevice, VirtualKey::Trigger1, PressureEvent{ value });
+		inputPipeline->FeedEvent(device.info.virtualDevice, VirtualKey::Trigger1, PressureDeltaEvent{ delta });
 		break;
 	}
 	
 	}
 }
 
-void WaylandGamepadFeed::ProcessKeyEvent(GamepadDevice& device, const input_event& ev, InputPipeline& pipeline) {
+void WaylandGamepadFeed::ProcessKeyEvent(GamepadDevice& device, const input_event& ev) {
 	VirtualKey mapped = MapEvdevButton(device, ev.code);
 	if (mapped != VirtualKey::None) {
 		VirtualKeyState state = ToVirtualKeyState(ev.value);
-		pipeline.FeedKeyEvent(device.info.virtualDevice, mapped, state);
+		inputPipeline->FeedEvent(device.info.virtualDevice, mapped, KeyStateEvent{ state });
 	}
 }
 
-void WaylandGamepadFeed::UpdateHat(GamepadDevice& device, bool horizontal, int value, InputPipeline& pipeline) {
+void WaylandGamepadFeed::UpdateHat(GamepadDevice& device, bool horizontal, int value) {
 	value = std::clamp(value, -1, 1);
 	if (horizontal) {
 		if (value == device.hatX) {
 			return;
 		}
 		if (device.hatX == -1) {
-			pipeline.FeedKeyEvent(device.info.virtualDevice, VirtualKey::West, VirtualKeyState::Down);
+			inputPipeline->FeedEvent(device.info.virtualDevice, VirtualKey::West, KeyStateEvent{ VirtualKeyState::Down });
 		} else if (device.hatX == 1) {
-			pipeline.FeedKeyEvent(device.info.virtualDevice, VirtualKey::East, VirtualKeyState::Down);
+			inputPipeline->FeedEvent(device.info.virtualDevice, VirtualKey::East, KeyStateEvent{ VirtualKeyState::Down });
 		}
 		device.hatX = value;
 		if (value == -1) {
-			pipeline.FeedKeyEvent(device.info.virtualDevice, VirtualKey::West, VirtualKeyState::Up);
+			inputPipeline->FeedEvent(device.info.virtualDevice, VirtualKey::West, KeyStateEvent{ VirtualKeyState::Up });
 		} else if (value == 1) {
-			pipeline.FeedKeyEvent(device.info.virtualDevice, VirtualKey::East, VirtualKeyState::Up);
+			inputPipeline->FeedEvent(device.info.virtualDevice, VirtualKey::East, KeyStateEvent{ VirtualKeyState::Up });
 		}
 	} else {
 		if (value == device.hatY) {
 			return;
 		}
 		if (device.hatY == -1) {
-			pipeline.FeedKeyEvent(device.info.virtualDevice, VirtualKey::North, VirtualKeyState::Down);
+			inputPipeline->FeedEvent(device.info.virtualDevice, VirtualKey::North, KeyStateEvent{ VirtualKeyState::Down });
 		} else if (device.hatY == 1) {
-			pipeline.FeedKeyEvent(device.info.virtualDevice, VirtualKey::South, VirtualKeyState::Down);
+			inputPipeline->FeedEvent(device.info.virtualDevice, VirtualKey::South, KeyStateEvent{ VirtualKeyState::Down });
 		}
 		device.hatY = value;
 		if (value == -1) {
-			pipeline.FeedKeyEvent(device.info.virtualDevice, VirtualKey::North, VirtualKeyState::Up);
+			inputPipeline->FeedEvent(device.info.virtualDevice, VirtualKey::North, KeyStateEvent{ VirtualKeyState::Up });
 		} else if (value == 1) {
-			pipeline.FeedKeyEvent(device.info.virtualDevice, VirtualKey::South, VirtualKeyState::Up);
+			inputPipeline->FeedEvent(device.info.virtualDevice, VirtualKey::South, KeyStateEvent{ VirtualKeyState::Up });
 		}
 	}
 }

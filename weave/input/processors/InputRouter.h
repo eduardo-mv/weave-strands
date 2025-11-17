@@ -14,6 +14,7 @@ AddRoute({VirtualDevice::Mouse3, {}}, {VirtualDevice::Mouse1, {}});
 #pragma once
 
 #include "weave/input/system/InputProcessor.h"
+#include <unordered_map>
 
 namespace weave::input {
 

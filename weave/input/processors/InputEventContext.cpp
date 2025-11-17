@@ -7,7 +7,7 @@ bool InputEventContextCondition::Check(InputStateMap const& inputState) const {
 	if (states.any && prevStates.any)
 		return true;
 
-	auto data = inputState.QueryKeyData(device, key).state.value_or(KeyStateData{});
+	auto data = inputState.QueryKeyData(device, key).state.value_or(KeyStatePayload{});
 
 	if(!states.any){
 		if (
@@ -49,7 +49,7 @@ void InputEventContext::AddRule(InputEventContextRule rule) {
 	rules.emplace_back(std::move(ruleUniquePtr));
 
 	for (auto & condition : rulePtr->conditions) {
-		if (weave::input::IsCursorKey(condition.key)) {
+		if (weave::input::SupportsCursor(condition.key)) {
 			condition.states.any = true;
 			condition.prevStates.any = true;
 		}
@@ -210,7 +210,7 @@ void InputEventContext::ParseXMLFeedbackNode(pugi::xml_node root, InputEventCont
 	if(!root || root.attribute("default").as_bool()) {
 		//Default feedback goes through all the rule's conditions and flags them for feedback if appropiate
 		for(auto const &cond : rule.conditions) {
-			if(IsCursorKey(cond.key) || IsPressureKey(cond.key)) {
+			if(SupportsCursor(cond.key) || SupportsPressure(cond.key)) {
 				rule.feedbackRequests.emplace_back(cond.dev, cond.key);
 			}
 		}

@@ -87,7 +87,8 @@ int NxDebugGamepad::GamepadDeviceData::FeedPooledInput(InputPipeline& inputPipel
 			for(int i = 0; i < numButtons; ++i) {
 				if(currData.buttons[i] != prevData.buttons[i]) {
 					//Button state changed
-					inputPipeline.FeedKeyEvent(vButtons[i], (currData.buttons.Test(i) ? VirtualKeyState::Down : VirtualKeyState::Up), vDevice);
+					inputPipeline.FeedEvent(vDevice, vButtons[i],
+						KeyStateEvent{ currData.buttons.Test(i) ? VirtualKeyState::Down : VirtualKeyState::Up });
 				}
 			}
 		}
@@ -103,7 +104,8 @@ int NxDebugGamepad::GamepadDeviceData::FeedPooledInput(InputPipeline& inputPipel
 								  x, y, deltax, deltay); //Output position and delta
 		
 		if(sendEvent) {
-			inputPipeline.FeedCursorPositionAndDelta(x, y, 0.0f, deltax, deltay, 0.0f, VirtualKey::Lstick, vDevice);
+			inputPipeline.FeedEvent(vDevice, VirtualKey::Lstick,
+				CursorPosDeltaEvent{ Vector3{ x, y, 0.0f }, Vector3{ deltax, deltay, 0.0f } });
 			EmulateDigitalPad(0, x, y, deltax, deltay, vDevice, inputPipeline);
 		}
 
@@ -116,7 +118,8 @@ int NxDebugGamepad::GamepadDeviceData::FeedPooledInput(InputPipeline& inputPipel
 								  x, y, deltax, deltay); //Output position and delta
 
 		if(sendEvent) {
-			inputPipeline.FeedCursorPositionAndDelta(x, y, 0.0f, deltax, deltay, 0.0f, VirtualKey::Rstick, vDevice);
+			inputPipeline.FeedEvent(vDevice, VirtualKey::Rstick,
+				CursorPosDeltaEvent{ Vector3{ x, y, 0.0f }, Vector3{ deltax, deltay, 0.0f } });
 			EmulateDigitalPad(1, x, y, deltax, deltay, vDevice, inputPipeline);
 		}
 	}
@@ -140,7 +143,8 @@ void weave::NxDebugGamepad::GamepadDeviceData::EmulateDigitalPad(int stick, floa
 		//Pullup detection
 		if(dir.y == 0 && posy - cap.y > responseDelta && posy > deadLimit) {
 			//Send North Down event
-			inputPipeline.FeedKeyEvent(stick == 0 ? VirtualKey::Lstick_North : VirtualKey::Rstick_North, VirtualKeyState::Down, vDevice);
+			inputPipeline.FeedEvent(vDevice, stick == 0 ? VirtualKey::Lstick_North : VirtualKey::Rstick_North,
+				KeyStateEvent{ VirtualKeyState::Down });
 			dir.y = 1;
 		}
 		if(dir.y == 1 && posy > cap.y) {
@@ -150,7 +154,8 @@ void weave::NxDebugGamepad::GamepadDeviceData::EmulateDigitalPad(int stick, floa
 		//Release pulldown detection
 		if(dir.y == -1 && posy - cap.y > responseDelta) {
 			//Send South release (Up) event here
-			inputPipeline.FeedKeyEvent(stick == 0 ? VirtualKey::Lstick_South : VirtualKey::Rstick_South, VirtualKeyState::Up, vDevice);
+			inputPipeline.FeedEvent(vDevice, stick == 0 ? VirtualKey::Lstick_South : VirtualKey::Rstick_South,
+				KeyStateEvent{ VirtualKeyState::Up });
 			dir.y = 0;
 			cap.y = 0.0f;
 		}
@@ -164,7 +169,8 @@ void weave::NxDebugGamepad::GamepadDeviceData::EmulateDigitalPad(int stick, floa
 		//Pulldown detection
 		if(dir.y == 0 && cap.y - posy > responseDelta && posy < -deadLimit) {
 			//Send South Down event
-			inputPipeline.FeedKeyEvent(stick == 0 ? VirtualKey::Lstick_South : VirtualKey::Rstick_South, VirtualKeyState::Down, vDevice);
+			inputPipeline.FeedEvent(vDevice, stick == 0 ? VirtualKey::Lstick_South : VirtualKey::Rstick_South,
+				KeyStateEvent{ VirtualKeyState::Down });
 			dir.y = -1;
 		}
 
@@ -175,7 +181,8 @@ void weave::NxDebugGamepad::GamepadDeviceData::EmulateDigitalPad(int stick, floa
 		//Release pullup detection
 		if(dir.y == 1 && cap.y - posy > responseDelta) {
 			//Send North release (Up) event here
-			inputPipeline.FeedKeyEvent(stick == 0 ? VirtualKey::Lstick_North : VirtualKey::Rstick_North, VirtualKeyState::Up, vDevice);
+			inputPipeline.FeedEvent(vDevice, stick == 0 ? VirtualKey::Lstick_North : VirtualKey::Rstick_North,
+				KeyStateEvent{ VirtualKeyState::Up });
 			dir.y = 0;
 			cap.y = 0.0f;
 		}
@@ -190,7 +197,8 @@ void weave::NxDebugGamepad::GamepadDeviceData::EmulateDigitalPad(int stick, floa
 		//Pullup detection
 		if(dir.x == 0 && posx - cap.x > responseDelta && posx > deadLimit) {
 			//Send East Down event
-			inputPipeline.FeedKeyEvent(stick == 0 ? VirtualKey::Lstick_East : VirtualKey::Rstick_East, VirtualKeyState::Down, vDevice);
+			inputPipeline.FeedEvent(vDevice, stick == 0 ? VirtualKey::Lstick_East : VirtualKey::Rstick_East,
+				KeyStateEvent{ VirtualKeyState::Down });
 			dir.x = 1;
 		}
 		if(dir.x == 1 && posx > cap.x) {
@@ -200,7 +208,8 @@ void weave::NxDebugGamepad::GamepadDeviceData::EmulateDigitalPad(int stick, floa
 		//Release pulldown detection
 		if(dir.x == -1 && posx - cap.x > responseDelta) {
 			//Send West release (Up) event here
-			inputPipeline.FeedKeyEvent(stick == 0 ? VirtualKey::Lstick_West : VirtualKey::Rstick_West, VirtualKeyState::Up, vDevice);
+			inputPipeline.FeedEvent(vDevice, stick == 0 ? VirtualKey::Lstick_West : VirtualKey::Rstick_West,
+				KeyStateEvent{ VirtualKeyState::Up });
 			dir.x = 0;
 			cap.x = 0.0f;
 		}
@@ -214,7 +223,8 @@ void weave::NxDebugGamepad::GamepadDeviceData::EmulateDigitalPad(int stick, floa
 		//Pulldown detection
 		if(dir.x == 0 && cap.x - posx > responseDelta && posx < -deadLimit) {
 			//Send West Down event
-			inputPipeline.FeedKeyEvent(stick == 0 ? VirtualKey::Lstick_West : VirtualKey::Rstick_West, VirtualKeyState::Down, vDevice);
+			inputPipeline.FeedEvent(vDevice, stick == 0 ? VirtualKey::Lstick_West : VirtualKey::Rstick_West,
+				KeyStateEvent{ VirtualKeyState::Down });
 			dir.x = -1;
 		}
 
@@ -225,7 +235,8 @@ void weave::NxDebugGamepad::GamepadDeviceData::EmulateDigitalPad(int stick, floa
 		//Release pullup detection
 		if(dir.x == 1 && cap.x - posx > responseDelta) {
 			//Send East release (Up) event here
-			inputPipeline.FeedKeyEvent(stick == 0 ? VirtualKey::Lstick_East : VirtualKey::Rstick_East, VirtualKeyState::Up, vDevice);
+			inputPipeline.FeedEvent(vDevice, stick == 0 ? VirtualKey::Lstick_East : VirtualKey::Rstick_East,
+				KeyStateEvent{ VirtualKeyState::Up });
 			dir.x = 0;
 			cap.x = 0.0f;
 		}

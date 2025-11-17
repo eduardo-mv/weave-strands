@@ -37,22 +37,12 @@ public:
 	void AddProcessor(std::shared_ptr<InputProcessor> processor);
 	void RemoveProcessor(std::shared_ptr<InputProcessor> processor);
 
-	void FeedKeyEvent(VirtualDevice device, VirtualKey keyId, VirtualKeyState state);
-	void FeedKeyPressure(VirtualDevice device, VirtualKey keyId, float pressure);
-	void FeedKeyPressureDelta(VirtualDevice device, VirtualKey keyId, float pressure);
-	void SetKeyPressureNormalization(VirtualDevice device, VirtualKey keyId, float x);
+	template<typename EventType>
+	void FeedEvent(VirtualDevice device, VirtualKey key, EventType&& event) {
+		FeedEvent(InputEventData{device, key, std::forward<EventType>(event)});
+	}
 
-	void FeedCursorPosition(VirtualDevice device, VirtualKey keyId, int x, int y, int z);
-	void FeedCursorPosition(VirtualDevice device, VirtualKey keyId, float x, float y, float z);
-
-	void FeedCursorDelta(VirtualDevice device, VirtualKey keyId, int x, int y, int z);
-	void FeedCursorDelta(VirtualDevice device, VirtualKey keyId, float x, float y, float z);
-
-	void FeedCursorPositionAndDelta(VirtualDevice device, VirtualKey keyId, int px, int py, int pz, int dx, int dy, int dz);
-	void FeedCursorPositionAndDelta(VirtualDevice device, VirtualKey keyId, float px, float py, float pz, float dx, float dy, float dz);
-	void SetCursorNormalization(VirtualDevice device, VirtualKey keyId, float x, float y, float z);
-
-	void FeedDeviceEvent(VirtualDevice device, DeviceState state);
+	void FeedEvent(InputEventData event);
 
 private:
 	void SortPipeline();

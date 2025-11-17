@@ -40,7 +40,33 @@ void InputStateWriter::InputEvent(InputEventData inputData, InputStateMap& input
 		}
 		inputState.WriteDeviceState(inputData.device, deviceState);
 	}
-
+	else if (inputData.HasMidiNote()) {
+		auto event = inputData.GetMidiNote();
+		inputState.WriteMidiNote(inputData.device, event.note, event.channel, event.velocity, event.pressed);
+	}
+	else if (inputData.HasMidiControl()) {
+		auto event = inputData.GetMidiControl();
+		inputState.WriteMidiControl(inputData.device, event.control, event.channel, event.value);
+	}
+	else if (inputData.HasMidiPitchBend()) {
+		auto event = inputData.GetMidiPitchBend();
+		inputState.WriteMidiPitchBend(inputData.device, event.channel, event.value);
+	}
+	else if (inputData.HasMidiProgram()) {
+		auto event = inputData.GetMidiProgram();
+		inputState.WriteMidiProgram(inputData.device, event.channel, event.program);
+	}
+	else if (inputData.HasMidiChannelPressure()) {
+		auto event = inputData.GetMidiChannelPressure();
+		inputState.WriteMidiChannelPressure(inputData.device, event.channel, event.pressure);
+	}
+	else if (inputData.HasMidiPolyPressure()) {
+		auto event = inputData.GetMidiPolyPressure();
+		inputState.WriteMidiPolyPressure(inputData.device, event.note, event.channel, event.pressure);
+	}
+	else if (inputData.HasPressureAndDelta()) {
+		inputState.WriteKeyPressureAndDelta(inputData.device, inputData.key, inputData.GetPressure(), inputData.GetPressureDelta());
+	}
 	else if (inputData.HasPressure()) {
 		inputState.WriteKeyPressure(inputData.device, inputData.key, inputData.GetPressure());
 	}

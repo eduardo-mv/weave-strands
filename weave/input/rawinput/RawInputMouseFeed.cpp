@@ -75,23 +75,23 @@ int RawInputMouseFeed::MouseDeviceData::FeedSyncInput(HRAWINPUT lparam, POINT po
 
 	if (raw->data.mouse.usButtonFlags & upButtons) {
 		if (raw->data.mouse.usButtonFlags & RI_MOUSE_LEFT_BUTTON_UP) {
-			inputPipeline.FeedKeyEvent(info.virtualDevice, VirtualKey::Click_Left, VirtualKeyState::Up);
+			inputPipeline.FeedEvent(info.virtualDevice, VirtualKey::Click_Left, KeyStateEvent{ VirtualKeyState::Up });
 		}
 		
 		if (raw->data.mouse.usButtonFlags & RI_MOUSE_MIDDLE_BUTTON_UP) {
-			inputPipeline.FeedKeyEvent(info.virtualDevice, VirtualKey::Click_Middle, VirtualKeyState::Up);
+			inputPipeline.FeedEvent(info.virtualDevice, VirtualKey::Click_Middle, KeyStateEvent{ VirtualKeyState::Up });
 		}
 		
 		if (raw->data.mouse.usButtonFlags & RI_MOUSE_RIGHT_BUTTON_UP) {
-			inputPipeline.FeedKeyEvent(info.virtualDevice, VirtualKey::Click_Right, VirtualKeyState::Up);
+			inputPipeline.FeedEvent(info.virtualDevice, VirtualKey::Click_Right, KeyStateEvent{ VirtualKeyState::Up });
 		}
 
 		if (raw->data.mouse.usButtonFlags & RI_MOUSE_BUTTON_4_UP) {
-			inputPipeline.FeedKeyEvent(info.virtualDevice, VirtualKey::Click_X4, VirtualKeyState::Up);
+			inputPipeline.FeedEvent(info.virtualDevice, VirtualKey::Click_X4, KeyStateEvent{ VirtualKeyState::Up });
 		}
 
 		if (raw->data.mouse.usButtonFlags & RI_MOUSE_BUTTON_5_UP) {
-			inputPipeline.FeedKeyEvent(info.virtualDevice, VirtualKey::Click_X5, VirtualKeyState::Up);
+			inputPipeline.FeedEvent(info.virtualDevice, VirtualKey::Click_X5, KeyStateEvent{ VirtualKeyState::Up });
 		}
 	}
 	
@@ -101,35 +101,38 @@ int RawInputMouseFeed::MouseDeviceData::FeedSyncInput(HRAWINPUT lparam, POINT po
 	//Down events
 	if (raw->data.mouse.usButtonFlags & downButtons) {
 		if (raw->data.mouse.usButtonFlags & RI_MOUSE_LEFT_BUTTON_DOWN) {
-			inputPipeline.FeedKeyEvent(info.virtualDevice, VirtualKey::Click_Left, VirtualKeyState::Down);
+			inputPipeline.FeedEvent(info.virtualDevice, VirtualKey::Click_Left, KeyStateEvent{ VirtualKeyState::Down });
 		}
 
 		if (raw->data.mouse.usButtonFlags & RI_MOUSE_MIDDLE_BUTTON_DOWN) {
-			inputPipeline.FeedKeyEvent(info.virtualDevice, VirtualKey::Click_Middle, VirtualKeyState::Down);
+			inputPipeline.FeedEvent(info.virtualDevice, VirtualKey::Click_Middle, KeyStateEvent{ VirtualKeyState::Down });
 		}
 
 		if (raw->data.mouse.usButtonFlags & RI_MOUSE_RIGHT_BUTTON_DOWN) {
-			inputPipeline.FeedKeyEvent(info.virtualDevice, VirtualKey::Click_Right, VirtualKeyState::Down);
+			inputPipeline.FeedEvent(info.virtualDevice, VirtualKey::Click_Right, KeyStateEvent{ VirtualKeyState::Down });
 		}
 
 		if (raw->data.mouse.usButtonFlags & RI_MOUSE_BUTTON_4_DOWN) {
-			inputPipeline.FeedKeyEvent(info.virtualDevice, VirtualKey::Click_X4, VirtualKeyState::Down);
+			inputPipeline.FeedEvent(info.virtualDevice, VirtualKey::Click_X4, KeyStateEvent{ VirtualKeyState::Down });
 		}
 
 		if (raw->data.mouse.usButtonFlags & RI_MOUSE_BUTTON_5_DOWN) {
-			inputPipeline.FeedKeyEvent(info.virtualDevice, VirtualKey::Click_X5, VirtualKeyState::Down);
+			inputPipeline.FeedEvent(info.virtualDevice, VirtualKey::Click_X5, KeyStateEvent{ VirtualKeyState::Down });
 		}
 
 		if (raw->data.mouse.usButtonFlags & RI_MOUSE_WHEEL) {
 			auto x = static_cast<short>(raw->data.mouse.usButtonData);
-			inputPipeline.FeedCursorDelta(info.virtualDevice, VirtualKey::Click_Wheel, x, 0, 0);
+			inputPipeline.FeedEvent(info.virtualDevice, VirtualKey::Click_Wheel,
+				CursorDeltaEvent{ Vector3{ static_cast<float>(x), 0.0f, 0.0f } });
 		}
 	}
 
 	//Check for movement
 	if (raw->data.mouse.lLastX || raw->data.mouse.lLastY) {
 		//lLastX and lLastY members of the mouse structure represent the movement of the mouse (not the position), pack and send the position and the movement
-		inputPipeline.FeedCursorPositionAndDelta(info.virtualDevice, VirtualKey::Cursor, point.x, point.y, 0, raw->data.mouse.lLastX, raw->data.mouse.lLastY, 0);
+		inputPipeline.FeedEvent(info.virtualDevice, VirtualKey::Cursor,
+			CursorPosDeltaEvent{ Vector3{ static_cast<float>(point.x), static_cast<float>(point.y), 0.0f },
+								 Vector3{ static_cast<float>(raw->data.mouse.lLastX), static_cast<float>(raw->data.mouse.lLastY), 0.0f } });
 	}
 	
 	return raw->data.mouse.usButtonFlags || raw->data.mouse.lLastX || raw->data.mouse.lLastY ? 1 : 0;
@@ -376,7 +379,8 @@ int RawInputMouseFeed::FeedSyncInput(UINT msg, WPARAM wparam, LPARAM lparam, Inp
 			//Window has been deactivated. Release any held keys.
 			if(LOWORD(wparam) == WA_INACTIVE) {
 				for (auto const& mouse : mouseDevices) {
-					inputPipeline.FeedDeviceEvent(mouse.info.virtualDevice, DeviceState::FocusLost);
+					inputPipeline.FeedEvent(mouse.info.virtualDevice, VirtualKey::None,
+						DeviceStateEvent{ DeviceState::FocusLost });
 				}
 				windowFocus = false;
 				//if(hideCursor)
@@ -384,7 +388,8 @@ int RawInputMouseFeed::FeedSyncInput(UINT msg, WPARAM wparam, LPARAM lparam, Inp
 			}
 			else if (LOWORD(wparam) == WA_ACTIVE || LOWORD(wparam) == WA_CLICKACTIVE) {
 				for (auto const& mouse : mouseDevices) {
-					inputPipeline.FeedDeviceEvent(mouse.info.virtualDevice, DeviceState::FocusGained);
+					inputPipeline.FeedEvent(mouse.info.virtualDevice, VirtualKey::None,
+						DeviceStateEvent{ DeviceState::FocusGained });
 				}
 				windowFocus = true;
 				//if(hideCursor)
@@ -494,7 +499,7 @@ RawInputMouseFeed::MouseDeviceData* RawInputMouseFeed::FindMouse(MouseId mouseId
 
 void RawInputMouseFeed::FlushDeviceEvents(InputPipeline& inputPipeline) {
 	for (auto& event : deviceEvents) {
-		inputPipeline.FeedDeviceEvent(event.first, event.second);
+		inputPipeline.FeedEvent(event.first, VirtualKey::None, DeviceStateEvent{ event.second });
 	}
 	deviceEvents.clear();
 }

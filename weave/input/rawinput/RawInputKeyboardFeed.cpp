@@ -72,14 +72,14 @@ int RawInputKeyboardFeed::KeyboardDeviceData::FeedSyncInput(HRAWINPUT lparam, In
 	//Run checks to determine left or right ctrl, shift and alt. In the case of shift and ctrl, both the generic key and the specific ones are sent
 	switch (vk) {
 	case VirtualKey::Control:
-		inputPipeline.FeedKeyEvent(info.virtualDevice,
+		inputPipeline.FeedEvent(info.virtualDevice,
 			((raw->data.keyboard.Flags & RI_KEY_E0) ? VirtualKey::Rcontrol : VirtualKey::Lcontrol),
-			((raw->data.keyboard.Flags & RI_KEY_BREAK) ? VirtualKeyState::Up : VirtualKeyState::Down));
+			KeyStateEvent{ (raw->data.keyboard.Flags & RI_KEY_BREAK) ? VirtualKeyState::Up : VirtualKeyState::Down });
 		break;
 	case VirtualKey::Shift:
-		inputPipeline.FeedKeyEvent(info.virtualDevice,
+		inputPipeline.FeedEvent(info.virtualDevice,
 			((raw->data.keyboard.MakeCode == 0x36) ? VirtualKey::Rshift : VirtualKey::Lshift),
-			((raw->data.keyboard.Flags & RI_KEY_BREAK) ? VirtualKeyState::Up : VirtualKeyState::Down));
+			KeyStateEvent{ (raw->data.keyboard.Flags & RI_KEY_BREAK) ? VirtualKeyState::Up : VirtualKeyState::Down });
 		break;
 	case VirtualKey::Alt:
 		vk = ((raw->data.keyboard.Flags & RI_KEY_E0) ? VirtualKey::Altgr : VirtualKey::Alt);
@@ -90,7 +90,8 @@ int RawInputKeyboardFeed::KeyboardDeviceData::FeedSyncInput(HRAWINPUT lparam, In
 		break;
 	}
 
-	inputPipeline.FeedKeyEvent(info.virtualDevice, vk, ((raw->data.keyboard.Flags & RI_KEY_BREAK) ? VirtualKeyState::Up : VirtualKeyState::Down));
+	inputPipeline.FeedEvent(info.virtualDevice, vk,
+		KeyStateEvent{ (raw->data.keyboard.Flags & RI_KEY_BREAK) ? VirtualKeyState::Up : VirtualKeyState::Down });
 
 	return 1;
 }
@@ -248,12 +249,14 @@ int RawInputKeyboardFeed::FeedSyncInput(UINT msg, WPARAM wparam, LPARAM lparam, 
 			//Window has been deactivated. Release any held keys.
 			if(LOWORD(wparam) == WA_INACTIVE) {
 				for (auto const& kb : keyboardDevices) {
-					inputPipeline.FeedDeviceEvent(kb.info.virtualDevice, DeviceState::FocusLost);
+					inputPipeline.FeedEvent(kb.info.virtualDevice, VirtualKey::None,
+						DeviceStateEvent{ DeviceState::FocusLost });
 				}
 			}
 			else if (LOWORD(wparam) == WA_ACTIVE || LOWORD(wparam) == WA_CLICKACTIVE) {
 				for (auto const& kb : keyboardDevices) {
-					inputPipeline.FeedDeviceEvent(kb.info.virtualDevice, DeviceState::FocusGained);
+					inputPipeline.FeedEvent(kb.info.virtualDevice, VirtualKey::None,
+						DeviceStateEvent{ DeviceState::FocusGained });
 				}
 			}
 			//Don't tell that the message has been processed. Someone outside may want it too!
@@ -313,7 +316,7 @@ RawInputKeyboardFeed::KeyboardDeviceData* RawInputKeyboardFeed::FindKeyboard(Key
 
 void RawInputKeyboardFeed::FlushDeviceEvents(InputPipeline& inputPipeline) {
 	for (auto& event : deviceEvents) {
-		inputPipeline.FeedDeviceEvent(event.first, event.second);
+		inputPipeline.FeedEvent(event.first, VirtualKey::None, DeviceStateEvent{ event.second });
 	}
 	deviceEvents.clear();
 }

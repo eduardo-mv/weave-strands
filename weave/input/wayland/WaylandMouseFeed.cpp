@@ -36,15 +36,15 @@ void WaylandMouseFeed::SetInputPipeline(InputPipeline* pipelinePtr) {
 
 	const bool wasFocused = focused;
 	if (pipeline && pointer) {
-		pipeline->FeedDeviceEvent(device, DeviceState::Disconnected);
+		pipeline->FeedEvent(device, VirtualKey::None, DeviceStateEvent{ DeviceState::Disconnected });
 	}
 
 	pipeline = pipelinePtr;
 
 	if (pipeline && pointer) {
-		pipeline->FeedDeviceEvent(device, DeviceState::Idle);
+		pipeline->FeedEvent(device, VirtualKey::None, DeviceStateEvent{ DeviceState::Idle });
 		if (wasFocused) {
-			pipeline->FeedDeviceEvent(device, DeviceState::FocusGained);
+			pipeline->FeedEvent(device, VirtualKey::None, DeviceStateEvent{ DeviceState::FocusGained });
 		}
 	}
 }
@@ -54,13 +54,13 @@ void WaylandMouseFeed::SetVirtualDevice(VirtualDevice newDevice) {
 		return;
 	}
 	if (pipeline && pointer) {
-		pipeline->FeedDeviceEvent(device, DeviceState::Disconnected);
+		pipeline->FeedEvent(device, VirtualKey::None, DeviceStateEvent{ DeviceState::Disconnected });
 	}
 	device = newDevice;
 	if (pipeline && pointer) {
-		pipeline->FeedDeviceEvent(device, DeviceState::Idle);
+		pipeline->FeedEvent(device, VirtualKey::None, DeviceStateEvent{ DeviceState::Idle });
 		if (focused) {
-			pipeline->FeedDeviceEvent(device, DeviceState::FocusGained);
+			pipeline->FeedEvent(device, VirtualKey::None, DeviceStateEvent{ DeviceState::FocusGained });
 		}
 	}
 }
@@ -83,7 +83,7 @@ bool WaylandMouseFeed::Bind(wl_seat* seat, wl_surface* targetSurface, InputPipel
 		return false;
 	}
 	wl_pointer_add_listener(pointer, &kPointerListener, this);
-	pipeline->FeedDeviceEvent(device, DeviceState::Idle);
+	pipeline->FeedEvent(device, VirtualKey::None, DeviceStateEvent{ DeviceState::Idle });
 	return true;
 }
 
@@ -93,7 +93,7 @@ void WaylandMouseFeed::Unbind() {
 		pointer = nullptr;
 	}
 	if (pipeline) {
-		pipeline->FeedDeviceEvent(device, DeviceState::Disconnected);
+		pipeline->FeedEvent(device, VirtualKey::None, DeviceStateEvent{ DeviceState::Disconnected });
 	}
 	focused = false;
 	surface = nullptr;
@@ -110,10 +110,11 @@ void WaylandMouseFeed::HandleEnter(void* data, wl_pointer*, uint32_t, wl_surface
 	self->position[1] = wl_fixed_to_double(sy);
 	self->SetFocus(true);
 	if (self->pipeline) {
-		self->pipeline->FeedCursorPosition(self->device, VirtualKey::Cursor,
-			static_cast<float>(self->position[0]),
-			static_cast<float>(self->position[1]),
-			0.0f);
+		self->pipeline->FeedEvent(self->device, VirtualKey::Cursor,
+			CursorPositionEvent{ Vector3{
+				static_cast<float>(self->position[0]),
+				static_cast<float>(self->position[1]),
+				0.0f } });
 	}
 }
 
@@ -138,13 +139,14 @@ void WaylandMouseFeed::HandleMotion(void* data, wl_pointer*, uint32_t, wl_fixed_
 	self->position[0] = newX;
 	self->position[1] = newY;
 
-	self->pipeline->FeedCursorPosition(self->device, VirtualKey::Cursor,
-		static_cast<float>(self->position[0]),
-		static_cast<float>(self->position[1]),
-		0.0f);
+	self->pipeline->FeedEvent(self->device, VirtualKey::Cursor,
+		CursorPositionEvent{ Vector3{
+			static_cast<float>(self->position[0]),
+			static_cast<float>(self->position[1]),
+			0.0f } });
 
 	if (deltaX != 0.0f || deltaY != 0.0f) {
-		self->pipeline->FeedCursorDelta(self->device, VirtualKey::Cursor, deltaX, deltaY, 0.0f);
+		self->pipeline->FeedEvent(self->device, VirtualKey::Cursor, CursorDeltaEvent{ Vector3{ deltaX, deltaY, 0.0f } });
 	}
 }
 
@@ -157,8 +159,8 @@ void WaylandMouseFeed::HandleButton(void* data, wl_pointer*, uint32_t, uint32_t,
 	if (vk == VirtualKey::None) {
 		return;
 	}
-	self->pipeline->FeedKeyEvent(self->device, vk,
-		(state == WL_POINTER_BUTTON_STATE_PRESSED) ? VirtualKeyState::Down : VirtualKeyState::Up);
+	self->pipeline->FeedEvent(self->device, vk,
+		KeyStateEvent{ (state == WL_POINTER_BUTTON_STATE_PRESSED) ? VirtualKeyState::Down : VirtualKeyState::Up });
 }
 
 void WaylandMouseFeed::HandleAxis(void* data, wl_pointer*, uint32_t, uint32_t axis, wl_fixed_t value) {
@@ -234,7 +236,8 @@ void WaylandMouseFeed::HandleFrame(void* data, wl_pointer*) {
 			self->axisDiscrete[WL_POINTER_AXIS_VERTICAL_SCROLL],
 			self->axisValue120[WL_POINTER_AXIS_VERTICAL_SCROLL]);
 		if (scroll != 0.0f) {
-			self->pipeline->FeedCursorDelta(self->device, VirtualKey::Click_Wheel, scroll, 0.0f, 0.0f);
+			self->pipeline->FeedEvent(self->device, VirtualKey::Click_Wheel,
+				CursorDeltaEvent{ Vector3{ static_cast<float>(scroll), 0.0f, 0.0f } });
 		}
 	}
 
@@ -243,7 +246,8 @@ void WaylandMouseFeed::HandleFrame(void* data, wl_pointer*) {
 			self->axisDiscrete[WL_POINTER_AXIS_HORIZONTAL_SCROLL],
 			self->axisValue120[WL_POINTER_AXIS_HORIZONTAL_SCROLL]);
 		if (scroll != 0.0f) {
-			self->pipeline->FeedCursorDelta(self->device, VirtualKey::Click_Wheel, 0.0f, scroll, 0.0f);
+			self->pipeline->FeedEvent(self->device, VirtualKey::Click_Wheel,
+				CursorDeltaEvent{ Vector3{ 0.0f, static_cast<float>(scroll), 0.0f } });
 		}
 	}
 
@@ -256,7 +260,8 @@ void WaylandMouseFeed::SetFocus(bool focusedState) {
 	}
 	focused = focusedState;
 	if (pipeline) {
-		pipeline->FeedDeviceEvent(device, focused ? DeviceState::FocusGained : DeviceState::FocusLost);
+		pipeline->FeedEvent(device, VirtualKey::None,
+			DeviceStateEvent{ focused ? DeviceState::FocusGained : DeviceState::FocusLost });
 	}
 	if (!focused) {
 		ClearAxisState();
