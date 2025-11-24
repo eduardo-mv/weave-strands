@@ -21,41 +21,6 @@ Vector3 AxisFromState(TransformState const &state, uint32_t axis) {
 	return state.orientation * bases[index];
 }
 
-bool ApplyRotation(Quaternion &orientation, float radians, Vector3 axis) {
-	if (radians <= 0.0f) {
-		return false;
-	}
-
-	if (!weave::algebra::normalizecond(axis)) {
-		return false;
-	}
-
-	orientation.Rotate(radians, axis);
-	orientation.Normalize();
-	return true;
-}
-
-void AlignAxisInternal(Quaternion &orientation, Vector3 current, Vector3 desired, Vector3 fallbackAxis) {
-	using namespace weave::algebra;
-
-	if (!normalizecond(current) || !normalizecond(desired)) {
-		return;
-	}
-
-	float dotValue = clamp(dot(current, desired), -1.0f, 1.0f);
-	float angle = std::acos(dotValue);
-
-	if (std::abs(F_PI - angle) < 0.001f) {
-		if (!normalizecond(fallbackAxis)) {
-			fallbackAxis = Vector3(0.0f, 1.0f, 0.0f);
-		}
-		ApplyRotation(orientation, angle, fallbackAxis);
-	} else if (angle > 0.00001f) {
-		Vector3 rotationAxis = cross(current, desired);
-		ApplyRotation(orientation, angle, rotationAxis);
-	}
-}
-
 TransformState LerpState(TransformState const &a, TransformState const &b, float t) {
 	TransformState result;
 	result.position = interpolation::lerp(a.position, b.position, t);
@@ -148,69 +113,6 @@ Vector3 ToGlobal(TransformState const &state, Vector3 const &localPoint) {
 Vector3 ToLocal(TransformState const &state, Vector3 const &globalPoint) {
 	Matrix4x4 matrix = ComposeInverseTRS(state.position, state.orientation, state.scaling);
 	return matrix * globalPoint;
-}
-
-TransformState AlignRight(TransformState const &state, Vector3 const &desiredRight) {
-	TransformState result = state;
-	Quaternion orientation = result.orientation;
-	Vector3 currentRight = -AxisFromState(state, 0);
-	Vector3 fallbackAxis = AxisFromState(state, 1);
-	AlignAxisInternal(orientation, currentRight, desiredRight, fallbackAxis);
-	result.orientation = orientation;
-	return result;
-}
-
-TransformState AlignUp(TransformState const &state, Vector3 const &desiredUp) {
-	TransformState result = state;
-	Quaternion orientation = result.orientation;
-	Vector3 currentUp = AxisFromState(state, 1);
-	Vector3 fallbackAxis = AxisFromState(state, 0);
-	AlignAxisInternal(orientation, currentUp, desiredUp, fallbackAxis);
-	result.orientation = orientation;
-	return result;
-}
-
-TransformState AlignFront(TransformState const &state, Vector3 const &desiredFront) {
-	TransformState result = state;
-	Quaternion orientation = result.orientation;
-	Vector3 currentFront = AxisFromState(state, 2);
-	Vector3 fallbackAxis = AxisFromState(state, 1);
-	AlignAxisInternal(orientation, currentFront, desiredFront, fallbackAxis);
-	result.orientation = orientation;
-	return result;
-}
-
-TransformState LookAt(TransformState const &state, Vector3 const &point, Vector3 const &worldUp, bool frontIsZPositive) {
-	using namespace weave::algebra;
-
-	Vector3 forward = frontIsZPositive ? point - state.position : state.position - point;
-	if (!weave::algebra::normalizecond(forward)) {
-		return state;
-	}
-
-	Vector3 up = worldUp;
-	if (!weave::algebra::normalizecond(up) || std::abs(dot(up, forward)) >= 0.999f) {
-		up = frontIsZPositive ? Vector3(0.0f, 0.0f, 1.0f) : Vector3(0.0f, 0.0f, -1.0f);
-	}
-
-	Vector3 right = orthonormalize(forward, up);
-	up = normalize(cross(right, forward));
-
-	Matrix3x3 basis(right, up, forward);
-	Quaternion orientation = basis;
-	orientation.Normalize();
-	TransformState result = state;
-	result.orientation = orientation;
-	return result;
-}
-
-TransformState LookAlign(TransformState const &state, Vector3 const &point, bool frontIsZPositive) {
-	Vector3 forward = frontIsZPositive ? point - state.position : state.position - point;
-	if (!weave::algebra::normalizecond(forward)) {
-		return state;
-	}
-
-	return AlignFront(state, forward);
 }
 
 TransformState Interpolate(TransformState const &a, TransformState const &b, float t) {

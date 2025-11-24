@@ -82,7 +82,7 @@ PickResult weave::raypicking::pickSphere(Ray const& ray, Vector3 const& spherePo
 PickResult weave::raypicking::pickBox(Ray const& ray, Transform const& boxTransform, Vector3 const& boxHalfSize)
 {
 	//Box is not axis aligned, so first we transform the ray into box space so we can use it as an axis aligned box
-	Matrix4x4 const& boxInvTrans = boxTransform.GetInverseTransformMatrixOrtho();
+	Matrix4x4 const& boxInvTrans = boxTransform.GetInverseTransformMatrix();
 	Vector3 rayObj = boxInvTrans.TransformNormal(ray.direction);
 	Vector3 rayObjInv = Vector3(1 / (rayObj.x + std::numeric_limits<float>::min()), 1 / (rayObj.y + std::numeric_limits<float>::min()), 1 / (rayObj.z + std::numeric_limits<float>::min()));
 	Vector3 originObj = boxInvTrans * ray.origin;

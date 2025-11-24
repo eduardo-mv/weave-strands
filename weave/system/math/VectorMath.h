@@ -1,7 +1,7 @@
 /*
 Title: "Vector Math library"
 File: VectorMath.h
-Author(s): Eduardo Martínez Vidal
+Author(s): Eduardo Martï¿½nez Vidal
 
 Abstract:
 Vector, Quaternion and Matrix definitions
@@ -210,19 +210,19 @@ struct Vector2T {
 		struct { Type r, g; };
 	};
 
-	Vector2T();
+	constexpr Vector2T();
 	Vector2T(Vector2T const &vIn) = default;
 	Vector2T(Vector2T &&vIn) = default;
-	explicit Vector2T(Type val);
+	constexpr explicit Vector2T(Type val);
 	Vector2T(std::initializer_list<Type> list);
 
-	explicit Vector2T(Type x, Type y);
+	constexpr explicit Vector2T(Type x, Type y);
 	explicit Vector2T(Type const *vIn);
 
 	//Assignment
-	void Set(Type x, Type y);
+	constexpr void Set(Type x, Type y);
 	void Set(Type const *vIn);
-	void Set(Vector2T const &vIn);
+	constexpr void Set(Vector2T const &vIn);
 
 	//Information about the vector
 	constexpr unsigned int Size() const;
@@ -233,9 +233,9 @@ struct Vector2T {
 
 	//Operators: Access
 	template<typename Index>
-	Type operator [] (Index i) const;
+	constexpr Type operator [] (Index i) const;
 	template<typename Index>
-	Type& operator[] (Index i);
+	constexpr Type& operator[] (Index i);
 
 	//Operators: Assignment
 	Vector2T& operator = (Vector2T const &vIn);
@@ -243,12 +243,12 @@ struct Vector2T {
 	Vector2T& operator = (std::initializer_list<Type> list);
 	Vector2T& operator = (Type const *vIn);
 
-	Vector2T& operator += (Vector2T const &vIn);
-	Vector2T& operator -= (Vector2T const &vIn);
-	Vector2T& operator *= (Vector2T const &vIn);
-	Vector2T& operator *= (Type c);
-	Vector2T& operator /= (Vector2T const &vIn);
-	Vector2T& operator /= (Type c);
+	constexpr Vector2T& operator += (Vector2T const &vIn);
+	constexpr Vector2T& operator -= (Vector2T const &vIn);
+	constexpr Vector2T& operator *= (Vector2T const &vIn);
+	constexpr Vector2T& operator *= (Type c);
+	constexpr Vector2T& operator /= (Vector2T const &vIn);
+	constexpr Vector2T& operator /= (Type c);
 
 	operator bool() const { return All(); }
 
@@ -271,24 +271,24 @@ struct Vector3T {
 		struct { Type r_alt; Vector2T<Type> gb; };
 	};
 
-	Vector3T();
+	constexpr Vector3T();
 	Vector3T(Vector3T const &vIn) = default;
 	Vector3T(Vector3T &&vIn) = default;
-	explicit Vector3T(Type val);
+	constexpr explicit Vector3T(Type val);
 	Vector3T(std::initializer_list<Type> list);
 
-	explicit Vector3T(Type x, Type y, Type z);
+	constexpr explicit Vector3T(Type x, Type y, Type z);
 	explicit Vector3T(Type const *vIn);
-	explicit Vector3T(Vector2T<Type> const &vIn, Type z);
-	explicit Vector3T(Type x, Vector2T<Type> const &vIn);
+	constexpr explicit Vector3T(Vector2T<Type> const &vIn, Type z);
+	constexpr explicit Vector3T(Type x, Vector2T<Type> const &vIn);
 	//explicit Vector3T(Quaternion const &q);
 
 	//Assignment
-	void Set(Type x, Type y, Type z);
+	constexpr void Set(Type x, Type y, Type z);
 	void Set(Type const *vIn);
-	void Set(Vector3T const &vIn);
-	void Set(Vector2T<Type> const &vIn, Type z);
-	void Set(Type x, Vector2T<Type> const &vIn);
+	constexpr void Set(Vector3T const &vIn);
+	constexpr void Set(Vector2T<Type> const &vIn, Type z);
+	constexpr void Set(Type x, Vector2T<Type> const &vIn);
 
 	//Information about the vector
 	constexpr unsigned int Size() const;
@@ -299,9 +299,9 @@ struct Vector3T {
 
 	//Operators: Access
 	template<typename Index>
-	Type operator [] (Index i) const;
+	constexpr Type operator [] (Index i) const;
 	template<typename Index>
-	Type& operator[] (Index i);
+	constexpr Type& operator[] (Index i);
 
 	//Operators: Assignment
 	Vector3T& operator = (Vector3T const &vIn);
@@ -310,12 +310,12 @@ struct Vector3T {
 	Vector3T& operator = (Type const *vIn);
 	//Vector3T& operator = (Quaternion const &q);
 
-	Vector3T& operator += (Vector3T const &vIn);
-	Vector3T& operator -= (Vector3T const &vIn);
-	Vector3T& operator *= (Vector3T const &vIn);
-	Vector3T& operator *= (Type c);
-	Vector3T& operator /= (Vector3T const &vIn);
-	Vector3T& operator /= (Type c);
+	constexpr Vector3T& operator += (Vector3T const &vIn);
+	constexpr Vector3T& operator -= (Vector3T const &vIn);
+	constexpr Vector3T& operator *= (Vector3T const &vIn);
+	constexpr Vector3T& operator *= (Type c);
+	constexpr Vector3T& operator /= (Vector3T const &vIn);
+	constexpr Vector3T& operator /= (Type c);
 
 	operator bool() const { return All(); }
 
@@ -341,33 +341,33 @@ struct Vector4T {
 		struct { Vector3T<Type> rgb; Type a_alt1; };
 	};
 
-	Vector4T();
+	constexpr Vector4T();
 	Vector4T(Vector4T const &vIn) = default;
 	Vector4T(Vector4T &&vIn) = default;
-	explicit Vector4T(Type val);
+	constexpr explicit Vector4T(Type val);
 	Vector4T(std::initializer_list<Type> list);
 
-	explicit Vector4T(Type x, Type y, Type z, Type w);
+	constexpr explicit Vector4T(Type x, Type y, Type z, Type w);
 	explicit Vector4T(Type const *vIn);
-	Vector4T(Vector3T<Type> const &vIn);
-	explicit Vector4T(Vector3T<Type> const &vIn, Type w);
-	explicit Vector4T(Type x, Vector3T<Type> const &vIn);
-	explicit Vector4T(Type x, Type y, Vector2T<Type> const &vIn);
-	explicit Vector4T(Type x, Vector2T<Type> const &vIn, Type w);
-	explicit Vector4T(Vector2T<Type> const &vIn, Type z, Type w);
-	explicit Vector4T(Vector2T<Type> const &vInXY, Vector2T<Type> const &vInZW);
+	constexpr Vector4T(Vector3T<Type> const &vIn);
+	constexpr explicit Vector4T(Vector3T<Type> const &vIn, Type w);
+	constexpr explicit Vector4T(Type x, Vector3T<Type> const &vIn);
+	constexpr explicit Vector4T(Type x, Type y, Vector2T<Type> const &vIn);
+	constexpr explicit Vector4T(Type x, Vector2T<Type> const &vIn, Type w);
+	constexpr explicit Vector4T(Vector2T<Type> const &vIn, Type z, Type w);
+	constexpr explicit Vector4T(Vector2T<Type> const &vInXY, Vector2T<Type> const &vInZW);
 	explicit Vector4T(QuaternionT<Type> const &q) : Vector4T(q.ijks) {}
 
 	//Assignment
-	void Set(Type x, Type y, Type z, Type w);
+	constexpr void Set(Type x, Type y, Type z, Type w);
 	void Set(Type const *vIn);
-	void Set(Vector4T const &vIn);
-	void Set(Vector3T<Type> const &vIn);
-	void Set(Vector3T<Type> const &vIn, Type w);
-	void Set(Type x, Vector3T<Type> const &vIn);
-	void Set(Type x, Type y, Vector2T<Type> const &vIn);
-	void Set(Type x, Vector2T<Type> const &vIn, Type w);
-	void Set(Vector2T<Type> const &vIn, Type z, Type w);
+	constexpr void Set(Vector4T const &vIn);
+	constexpr void Set(Vector3T<Type> const &vIn);
+	constexpr void Set(Vector3T<Type> const &vIn, Type w);
+	constexpr void Set(Type x, Vector3T<Type> const &vIn);
+	constexpr void Set(Type x, Type y, Vector2T<Type> const &vIn);
+	constexpr void Set(Type x, Vector2T<Type> const &vIn, Type w);
+	constexpr void Set(Vector2T<Type> const &vIn, Type z, Type w);
 
 
 	//Information about the vector
@@ -379,9 +379,9 @@ struct Vector4T {
 
 	//Operators: Access
 	template<typename Index>
-	Type operator [] (Index i) const;
+	constexpr Type operator [] (Index i) const;
 	template<typename Index>
-	Type& operator[] (Index i);
+	constexpr Type& operator[] (Index i);
 
 	//Operators: Assignment
 	Vector4T& operator = (Vector4T const &vIn);
@@ -391,12 +391,12 @@ struct Vector4T {
 	Vector4T& operator = (Vector3T<Type> const &vIn);
 	Vector4T& operator = (QuaternionT<Type> const &q);
 	
-	Vector4T& operator += (Vector4T const &vIn);
-	Vector4T& operator -= (Vector4T const &vIn);
-	Vector4T& operator *= (Vector4T const &vIn);
-	Vector4T& operator *= (Type c);
-	Vector4T& operator /= (Vector4T const &vIn);
-	Vector4T& operator /= (Type c);
+	constexpr Vector4T& operator += (Vector4T const &vIn);
+	constexpr Vector4T& operator -= (Vector4T const &vIn);
+	constexpr Vector4T& operator *= (Vector4T const &vIn);
+	constexpr Vector4T& operator *= (Type c);
+	constexpr Vector4T& operator /= (Vector4T const &vIn);
+	constexpr Vector4T& operator /= (Type c);
 
 	operator bool() const { return All(); }
 
@@ -958,7 +958,7 @@ struct QuaternionT {
 		Vector4T<Type> ijks;
 	};
 
-	QuaternionT();
+	constexpr QuaternionT();
 	QuaternionT(QuaternionT const &) = default;
 	QuaternionT(QuaternionT &&) = default;
 
@@ -990,7 +990,7 @@ struct QuaternionT {
 	QuaternionT Inverted() const;
 
 	//Sets the quaternion identity (0,0,0,1)
-	void Identity();
+	constexpr void Identity();
 
 	//Sets the orientation of a quaternion given an angle in radians and a rotation vector
 	void Orientation(Type radians, Type x, Type y, Type z, bool normalize = true);
@@ -1136,6 +1136,15 @@ template<typename Type>
 inline quatt<Type> normalize(quatt<Type> const &q1) { quatt<Type> qret = q1; qret.Normalize(); return qret; }
 template<class vecType>
 inline vecType normalizesafe(vecType const &v1) { return v1 / (length(v1) + 0.0001f); }
+template<class vecType>
+inline bool normalizecond(vecType &v1) {
+	auto len = length(v1);
+	if (len <= 0.000001f) {
+		return false;
+	}
+	v1 /= len;
+	return true;
+}
 
 //Cross product
 template<typename Type>
@@ -1340,10 +1349,10 @@ inline PlaneT<Type> makeplane(vec3t<Type> const &normal, vec3t<Type> const &poin
 //Vec2 impl
 
 template<typename Type>
-inline Vector2T<Type>::Vector2T() {}
+inline constexpr Vector2T<Type>::Vector2T() {}
 
 template<typename Type>
-inline Vector2T<Type>::Vector2T(Type val) : x(val), y(val) {}
+inline constexpr Vector2T<Type>::Vector2T(Type val) : x(val), y(val) {}
 
 template<typename Type>
 inline Vector2T<Type>::Vector2T(std::initializer_list<Type> list) {
@@ -1353,20 +1362,20 @@ inline Vector2T<Type>::Vector2T(std::initializer_list<Type> list) {
 }
 
 template<typename Type>
-inline Vector2T<Type>::Vector2T(Type x, Type y) : x(x), y(y) {}
+inline constexpr Vector2T<Type>::Vector2T(Type x, Type y) : x(x), y(y) {}
 
 template<typename Type>
 inline Vector2T<Type>::Vector2T(Type const * vIn) : x(vIn[0]), y(vIn[1]) {}
 
 //Assignment
 template<typename Type>
-inline void Vector2T<Type>::Set(Type ix, Type iy) { x = ix; y = iy; }
+inline constexpr void Vector2T<Type>::Set(Type ix, Type iy) { x = ix; y = iy; }
 
 template<typename Type>
 inline void Vector2T<Type>::Set(Type const * vIn) { x = vIn[0]; y = vIn[1]; }
 
 template<typename Type>
-inline void Vector2T<Type>::Set(Vector2T const & vIn) { x = vIn.x; y = vIn.y; }
+inline constexpr void Vector2T<Type>::Set(Vector2T const & vIn) { x = vIn.x; y = vIn.y; }
 
 //Information about the vector
 template<typename Type>
@@ -1401,10 +1410,10 @@ inline constexpr uint32_t Vector2T<Type>::NumComps() { return 2; }
 //Operators: Access
 template<typename Type>
 template<typename Index>
-inline Type Vector2T<Type>::operator [] (Index i) const { return data[i]; }
+inline constexpr Type Vector2T<Type>::operator [] (Index i) const { return data[i]; }
 template<typename Type>
 template<typename Index>
-inline Type& Vector2T<Type>::operator[] (Index i) { return data[i]; }
+inline constexpr Type& Vector2T<Type>::operator[] (Index i) { return data[i]; }
 
 
 
@@ -1428,17 +1437,17 @@ inline Vector2T<Type>& Vector2T<Type>::operator = (Vector2T &&) = default;
 template<typename Type>
 inline Vector2T<Type>& Vector2T<Type>::operator = (Type const *vIn) { x = vIn[0]; y = vIn[1]; return *this; }
 template<typename Type>
-inline Vector2T<Type>& Vector2T<Type>::operator += (Vector2T const &vIn) { x += vIn.x; y += vIn.y; return *this; }
+inline constexpr Vector2T<Type>& Vector2T<Type>::operator += (Vector2T const &vIn) { x += vIn.x; y += vIn.y; return *this; }
 template<typename Type>
-inline Vector2T<Type>& Vector2T<Type>::operator -= (Vector2T const &vIn) { x -= vIn.x; y -= vIn.y; return *this; }
+inline constexpr Vector2T<Type>& Vector2T<Type>::operator -= (Vector2T const &vIn) { x -= vIn.x; y -= vIn.y; return *this; }
 template<typename Type>
-inline Vector2T<Type>& Vector2T<Type>::operator *= (Vector2T const &vIn) { x *= vIn.x; y *= vIn.y; return *this; }
+inline constexpr Vector2T<Type>& Vector2T<Type>::operator *= (Vector2T const &vIn) { x *= vIn.x; y *= vIn.y; return *this; }
 template<typename Type>
-inline Vector2T<Type>& Vector2T<Type>::operator *= (Type c) { x *= c; y *= c; return *this; }
+inline constexpr Vector2T<Type>& Vector2T<Type>::operator *= (Type c) { x *= c; y *= c; return *this; }
 template<typename Type>
-inline Vector2T<Type>& Vector2T<Type>::operator /= (Vector2T const &vIn) { x /= vIn.x; y /= vIn.y; return *this; }
+inline constexpr Vector2T<Type>& Vector2T<Type>::operator /= (Vector2T const &vIn) { x /= vIn.x; y /= vIn.y; return *this; }
 template<typename Type>
-inline Vector2T<Type>& Vector2T<Type>::operator /= (Type c) { x /= c; y /= c; return *this; }
+inline constexpr Vector2T<Type>& Vector2T<Type>::operator /= (Type c) { x /= c; y /= c; return *this; }
 
 //Unary -
 template<typename T, std::enable_if_t<std::is_unsigned<T>::value, int> = 0>
@@ -1548,10 +1557,10 @@ inline Vector2T<bool> operator >= (Vector2T<T> const &v1, Vector2T<T> const &v2)
 //Vec3 impl
 
 template<typename Type>
-inline Vector3T<Type>::Vector3T() {}
+inline constexpr Vector3T<Type>::Vector3T() {}
 
 template<typename Type>
-inline Vector3T<Type>::Vector3T(Type val) : x(val), y(val), z(val) {}
+inline constexpr Vector3T<Type>::Vector3T(Type val) : x(val), y(val), z(val) {}
 
 template<typename Type>
 inline Vector3T<Type>::Vector3T(std::initializer_list<Type> list) {
@@ -1561,32 +1570,32 @@ inline Vector3T<Type>::Vector3T(std::initializer_list<Type> list) {
 }
 
 template<typename Type>
-inline Vector3T<Type>::Vector3T(Type x, Type y, Type z) : x(x), y(y), z(z) {}
+inline constexpr Vector3T<Type>::Vector3T(Type x, Type y, Type z) : x(x), y(y), z(z) {}
 
 template<typename Type>
 inline Vector3T<Type>::Vector3T(Type const * vIn) : x(vIn[0]), y(vIn[1]), z(vIn[2]) {}
 
 template<typename Type>
-inline Vector3T<Type>::Vector3T(Vector2T<Type> const & vIn, Type z) : x(vIn.x), y(vIn.y), z(z) {}
+inline constexpr Vector3T<Type>::Vector3T(Vector2T<Type> const & vIn, Type z) : x(vIn.x), y(vIn.y), z(z) {}
 
 template<typename Type>
-inline Vector3T<Type>::Vector3T(Type x, Vector2T<Type> const & vIn) : x(x), y(vIn.x), z(vIn.y) {}
+inline constexpr Vector3T<Type>::Vector3T(Type x, Vector2T<Type> const & vIn) : x(x), y(vIn.x), z(vIn.y) {}
 
 //Assignment
 template<typename Type>
-inline void Vector3T<Type>::Set(Type ix, Type iy, Type iz) { x = ix; y = iy; z = iz; }
+inline constexpr void Vector3T<Type>::Set(Type ix, Type iy, Type iz) { x = ix; y = iy; z = iz; }
 
 template<typename Type>
 inline void Vector3T<Type>::Set(Type const * vIn) { x = vIn[0]; y = vIn[1]; z = vIn[2]; }
 
 template<typename Type>
-inline void Vector3T<Type>::Set(Vector3T const & vIn) { x = vIn.x; y = vIn.y; z = vIn.z; }
+inline constexpr void Vector3T<Type>::Set(Vector3T const & vIn) { x = vIn.x; y = vIn.y; z = vIn.z; }
 
 template<typename Type>
-inline void Vector3T<Type>::Set(Vector2T<Type> const & vIn, Type iz) { x = vIn.x; y = vIn.y; z = iz; }
+inline constexpr void Vector3T<Type>::Set(Vector2T<Type> const & vIn, Type iz) { x = vIn.x; y = vIn.y; z = iz; }
 
 template<typename Type>
-inline void Vector3T<Type>::Set(Type ix, Vector2T<Type> const & vIn) { x = ix; y = vIn.x; z = vIn.y; }
+inline constexpr void Vector3T<Type>::Set(Type ix, Vector2T<Type> const & vIn) { x = ix; y = vIn.x; z = vIn.y; }
 
 //Information about the vector
 template<typename Type>
@@ -1621,10 +1630,10 @@ inline constexpr uint32_t Vector3T<Type>::NumComps() { return 3; }
 //Operators: Access
 template<typename Type>
 template<typename Index>
-inline Type Vector3T<Type>::operator [] (Index i) const { return data[i]; }
+inline constexpr Type Vector3T<Type>::operator [] (Index i) const { return data[i]; }
 template<typename Type>
 template<typename Index>
-inline Type& Vector3T<Type>::operator[] (Index i) { return data[i]; }
+inline constexpr Type& Vector3T<Type>::operator[] (Index i) { return data[i]; }
 
 //Operators: Assignment
 template<typename Type>
@@ -1634,7 +1643,7 @@ inline Vector3T<Type>& Vector3T<Type>::operator = (Vector3T &&vIn) = default;
 
 template<typename Type>
 inline Vector3T<Type>& Vector3T<Type>::operator = (std::initializer_list<Type> list) {
-	int i = 0;
+	size_t i = 0;
 	for(; i<list.size() && i<3; ++i)
 		data[i] = list.begin()[i];
 	for(; i < 3; ++i)
@@ -1648,17 +1657,17 @@ inline Vector3T<Type>& Vector3T<Type>::operator = (Type const *vIn) { x = vIn[0]
 //void Vector3T<Type>::operator = (Quaternion const &q);
 
 template<typename Type>
-inline Vector3T<Type>& Vector3T<Type>::operator += (Vector3T const &vIn) { x += vIn.x; y += vIn.y; z += vIn.z; return *this; }
+inline constexpr Vector3T<Type>& Vector3T<Type>::operator += (Vector3T const &vIn) { x += vIn.x; y += vIn.y; z += vIn.z; return *this; }
 template<typename Type>
-inline Vector3T<Type>& Vector3T<Type>::operator -= (Vector3T const &vIn) { x -= vIn.x; y -= vIn.y; z -= vIn.z; return *this; }
+inline constexpr Vector3T<Type>& Vector3T<Type>::operator -= (Vector3T const &vIn) { x -= vIn.x; y -= vIn.y; z -= vIn.z; return *this; }
 template<typename Type>
-inline Vector3T<Type>& Vector3T<Type>::operator *= (Vector3T const &vIn) { x *= vIn.x; y *= vIn.y; z *= vIn.z; return *this; }
+inline constexpr Vector3T<Type>& Vector3T<Type>::operator *= (Vector3T const &vIn) { x *= vIn.x; y *= vIn.y; z *= vIn.z; return *this; }
 template<typename Type>
-inline Vector3T<Type>& Vector3T<Type>::operator *= (Type c) { x *= c; y *= c; z *= c; return *this; }
+inline constexpr Vector3T<Type>& Vector3T<Type>::operator *= (Type c) { x *= c; y *= c; z *= c; return *this; }
 template<typename Type>
-inline Vector3T<Type>& Vector3T<Type>::operator /= (Vector3T const &vIn) { x /= vIn.x; y /= vIn.y; z /= vIn.z; return *this; }
+inline constexpr Vector3T<Type>& Vector3T<Type>::operator /= (Vector3T const &vIn) { x /= vIn.x; y /= vIn.y; z /= vIn.z; return *this; }
 template<typename Type>
-inline Vector3T<Type>& Vector3T<Type>::operator /= (Type c) { x /= c; y /= c; z /= c; return *this; }
+inline constexpr Vector3T<Type>& Vector3T<Type>::operator /= (Type c) { x /= c; y /= c; z /= c; return *this; }
 
 //Unary -
 template<typename T, std::enable_if_t<std::is_unsigned<T>::value, int> = 0>
@@ -1771,9 +1780,9 @@ inline Vector3T<bool> operator >= (Vector3T<T> const &v1, Vector3T<T> const &v2)
 //Vec4 impl
 
 template<typename Type>
-inline Vector4T<Type>::Vector4T() {}
+inline constexpr Vector4T<Type>::Vector4T() {}
 template<typename Type>
-inline Vector4T<Type>::Vector4T(Type val) : x(val), y(val), z(val), w(val) {}
+inline constexpr Vector4T<Type>::Vector4T(Type val) : x(val), y(val), z(val), w(val) {}
 template<typename Type>
 inline Vector4T<Type>::Vector4T(std::initializer_list<Type> list) {
 	int i = 0;
@@ -1781,43 +1790,43 @@ inline Vector4T<Type>::Vector4T(std::initializer_list<Type> list) {
 		data[i] = list.begin()[i];
 }
 template<typename Type>
-inline Vector4T<Type>::Vector4T(Type x, Type y, Type z, Type w) : x(x), y(y), z(z), w(w) {}
+inline constexpr Vector4T<Type>::Vector4T(Type x, Type y, Type z, Type w) : x(x), y(y), z(z), w(w) {}
 template<typename Type>
 inline Vector4T<Type>::Vector4T(Type const * vIn) : x(vIn[0]), y(vIn[1]), z(vIn[2]), w(vIn[3]) {}
 template<typename Type>
-inline Vector4T<Type>::Vector4T(Vector3T<Type> const & vIn) : x(vIn.x), y(vIn.y), z(vIn.z), w(Type(1)) {}
+inline constexpr Vector4T<Type>::Vector4T(Vector3T<Type> const & vIn) : x(vIn.x), y(vIn.y), z(vIn.z), w(Type(1)) {}
 template<typename Type>
-inline Vector4T<Type>::Vector4T(Vector3T<Type> const & vIn, Type w) : x(vIn.x), y(vIn.y), z(vIn.z), w(w) {}
+inline constexpr Vector4T<Type>::Vector4T(Vector3T<Type> const & vIn, Type w) : x(vIn.x), y(vIn.y), z(vIn.z), w(w) {}
 template<typename Type>
-inline Vector4T<Type>::Vector4T(Type x, Vector3T<Type> const & vIn) : x(x), y(vIn.x), z(vIn.y), w(vIn.z) {}
+inline constexpr Vector4T<Type>::Vector4T(Type x, Vector3T<Type> const & vIn) : x(x), y(vIn.x), z(vIn.y), w(vIn.z) {}
 template<typename Type>
-inline Vector4T<Type>::Vector4T(Type x, Type y, Vector2T<Type> const & vIn) : x(x), y(y), z(vIn.x), w(vIn.y) {}
+inline constexpr Vector4T<Type>::Vector4T(Type x, Type y, Vector2T<Type> const & vIn) : x(x), y(y), z(vIn.x), w(vIn.y) {}
 template<typename Type>
-inline Vector4T<Type>::Vector4T(Type x, Vector2T<Type> const & vIn, Type w) : x(x), y(vIn.x), z(vIn.y), w(w) {}
+inline constexpr Vector4T<Type>::Vector4T(Type x, Vector2T<Type> const & vIn, Type w) : x(x), y(vIn.x), z(vIn.y), w(w) {}
 template<typename Type>
-inline Vector4T<Type>::Vector4T(Vector2T<Type> const & vIn, Type z, Type w) : x(vIn.x), y(vIn.y), z(z), w(w) {}
+inline constexpr Vector4T<Type>::Vector4T(Vector2T<Type> const & vIn, Type z, Type w) : x(vIn.x), y(vIn.y), z(z), w(w) {}
 template<typename Type>
-inline Vector4T<Type>::Vector4T(Vector2T<Type> const & vInXY, Vector2T<Type> const & vInZW) : xy(vInXY), zw(vInZW) {}
+inline constexpr Vector4T<Type>::Vector4T(Vector2T<Type> const & vInXY, Vector2T<Type> const & vInZW) : xy(vInXY), zw(vInZW) {}
 
 //Assignment
 template<typename Type>
-inline void Vector4T<Type>::Set(Type ix, Type iy, Type iz, Type iw) { x = ix; y = iy; z = iz; w = iw; }
+inline constexpr void Vector4T<Type>::Set(Type ix, Type iy, Type iz, Type iw) { x = ix; y = iy; z = iz; w = iw; }
 template<typename Type>
 inline void Vector4T<Type>::Set(Type const * vIn) { x = vIn[0]; y = vIn[1]; z = vIn[2]; w = vIn[3]; }
 template<typename Type>
-inline void Vector4T<Type>::Set(Vector4T const & vIn) { x = vIn.x; y = vIn.y; z = vIn.z; w = vIn.w; }
+inline constexpr void Vector4T<Type>::Set(Vector4T const & vIn) { x = vIn.x; y = vIn.y; z = vIn.z; w = vIn.w; }
 template<typename Type>
-inline void Vector4T<Type>::Set(Vector3T<Type> const & vIn) { x = vIn.x; y = vIn.y; z = vIn.z; w = 1.0f; }
+inline constexpr void Vector4T<Type>::Set(Vector3T<Type> const & vIn) { x = vIn.x; y = vIn.y; z = vIn.z; w = Type(1); }
 template<typename Type>
-inline void Vector4T<Type>::Set(Vector3T<Type> const & vIn, Type iw) { x = vIn.x; y = vIn.y; z = vIn.z; w = iw; }
+inline constexpr void Vector4T<Type>::Set(Vector3T<Type> const & vIn, Type iw) { x = vIn.x; y = vIn.y; z = vIn.z; w = iw; }
 template<typename Type>
-inline void Vector4T<Type>::Set(Type ix, Vector3T<Type> const & vIn) { x = ix; y = vIn.x; z = vIn.y; w = vIn.z; }
+inline constexpr void Vector4T<Type>::Set(Type ix, Vector3T<Type> const & vIn) { x = ix; y = vIn.x; z = vIn.y; w = vIn.z; }
 template<typename Type>
-inline void Vector4T<Type>::Set(Type ix, Type iy, Vector2T<Type> const & vIn) { x = ix; y = iy; z = vIn.x; w = vIn.y; }
+inline constexpr void Vector4T<Type>::Set(Type ix, Type iy, Vector2T<Type> const & vIn) { x = ix; y = iy; z = vIn.x; w = vIn.y; }
 template<typename Type>
-inline void Vector4T<Type>::Set(Type ix, Vector2T<Type> const & vIn, Type iw) { x = ix; y = vIn.x; z = vIn.y; w = iw; }
+inline constexpr void Vector4T<Type>::Set(Type ix, Vector2T<Type> const & vIn, Type iw) { x = ix; y = vIn.x; z = vIn.y; w = iw; }
 template<typename Type>
-inline void Vector4T<Type>::Set(Vector2T<Type> const & vIn, Type iz, Type iw) { x = vIn.x; y = vIn.y; z = iz; w = iw; }
+inline constexpr void Vector4T<Type>::Set(Vector2T<Type> const & vIn, Type iz, Type iw) { x = vIn.x; y = vIn.y; z = iz; w = iw; }
 
 //Information about the vector
 template<typename Type>
@@ -1851,10 +1860,10 @@ inline constexpr uint32_t Vector4T<Type>::NumComps() { return 4; }
 //Operators: Access
 template<typename Type>
 template<typename Index>
-inline Type Vector4T<Type>::operator [] (Index i) const { return data[i]; }
+inline constexpr Type Vector4T<Type>::operator [] (Index i) const { return data[i]; }
 template<typename Type>
 template<typename Index>
-inline Type& Vector4T<Type>::operator[] (Index i) { return data[i]; }
+inline constexpr Type& Vector4T<Type>::operator[] (Index i) { return data[i]; }
 
 
 
@@ -1878,22 +1887,22 @@ inline Vector4T<Type>& Vector4T<Type>::operator = (std::initializer_list<Type> l
 template<typename Type>
 inline Vector4T<Type>& Vector4T<Type>::operator = (Type const *vIn) { x = vIn[0]; y = vIn[1]; z = vIn[2]; w = vIn[3]; return *this; }
 template<typename Type>
-inline Vector4T<Type>& Vector4T<Type>::operator = (Vector3T<Type> const &vIn) { x = vIn.x; y = vIn.y; z = vIn.z; w = 1.0f; return *this; }
+inline Vector4T<Type>& Vector4T<Type>::operator = (Vector3T<Type> const &vIn) { x = vIn.x; y = vIn.y; z = vIn.z; w = Type(1); return *this; }
 template<typename Type>
 inline Vector4T<Type>& Vector4T<Type>::operator = (QuaternionT<Type> const &q) { *this = q.ijks; return *this; }
 
 template<typename Type>
-inline Vector4T<Type>& Vector4T<Type>::operator += (Vector4T const &vIn) { x += vIn.x; y += vIn.y; z += vIn.z; w += vIn.w; return *this; }
+inline constexpr Vector4T<Type>& Vector4T<Type>::operator += (Vector4T const &vIn) { x += vIn.x; y += vIn.y; z += vIn.z; w += vIn.w; return *this; }
 template<typename Type>
-inline Vector4T<Type>& Vector4T<Type>::operator -= (Vector4T const &vIn) { x -= vIn.x; y -= vIn.y; z -= vIn.z; w -= vIn.w; return *this; }
+inline constexpr Vector4T<Type>& Vector4T<Type>::operator -= (Vector4T const &vIn) { x -= vIn.x; y -= vIn.y; z -= vIn.z; w -= vIn.w; return *this; }
 template<typename Type>
-inline Vector4T<Type>& Vector4T<Type>::operator *= (Vector4T const &vIn) { x *= vIn.x; y *= vIn.y; z *= vIn.z; w *= vIn.w; return *this; }
+inline constexpr Vector4T<Type>& Vector4T<Type>::operator *= (Vector4T const &vIn) { x *= vIn.x; y *= vIn.y; z *= vIn.z; w *= vIn.w; return *this; }
 template<typename Type>
-inline Vector4T<Type>& Vector4T<Type>::operator *= (Type c) { x *= c; y *= c; z *= c; w *= c; return *this; }
+inline constexpr Vector4T<Type>& Vector4T<Type>::operator *= (Type c) { x *= c; y *= c; z *= c; w *= c; return *this; }
 template<typename Type>
-inline Vector4T<Type>& Vector4T<Type>::operator /= (Vector4T const &vIn) { x /= vIn.x; y /= vIn.y; z /= vIn.z; w /= vIn.w; return *this; }
+inline constexpr Vector4T<Type>& Vector4T<Type>::operator /= (Vector4T const &vIn) { x /= vIn.x; y /= vIn.y; z /= vIn.z; w /= vIn.w; return *this; }
 template<typename Type>
-inline Vector4T<Type>& Vector4T<Type>::operator /= (Type c) { x /= c; y /= c; z /= c; w /= c; return *this; }
+inline constexpr Vector4T<Type>& Vector4T<Type>::operator /= (Type c) { x /= c; y /= c; z /= c; w /= c; return *this; }
 
 //Unary -
 template<typename T, std::enable_if_t<std::is_unsigned<T>::value, int> = 0>
@@ -3796,7 +3805,7 @@ inline Matrix2x2T<Type> operator / (Type s, Matrix2x2T<Type> const &m) { return 
 
 
 template<typename Type>
-inline QuaternionT<Type>::QuaternionT() : ijks(0, 0, 0, 1) {}
+inline constexpr QuaternionT<Type>::QuaternionT() : ijks(0, 0, 0, 1) {}
 
 //Initializes the quaternion by setting its direct values
 template<typename Type>
@@ -3874,7 +3883,7 @@ inline QuaternionT<Type> QuaternionT<Type>::Inverted() const {
 
 //Sets the quaternion identity (0,0,0,1)
 template<typename Type>
-inline void QuaternionT<Type>::Identity() {
+inline constexpr void QuaternionT<Type>::Identity() {
 	ijks.Set(0, 0, 0, 1);
 }
 
