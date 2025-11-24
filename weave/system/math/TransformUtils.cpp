@@ -115,6 +115,16 @@ Vector3 ToLocal(TransformState const &state, Vector3 const &globalPoint) {
 	return matrix * globalPoint;
 }
 
+Vector3 ToGlobalDirection(TransformState const &state, Vector3 const &localDir) {
+	Matrix4x4 matrix = ComposeTRS(Vector3(0.0f, 0.0f, 0.0f), state.orientation, state.scaling);
+	return matrix * localDir;
+}
+
+Vector3 ToLocalDirection(TransformState const &state, Vector3 const &globalDir) {
+	Matrix4x4 matrix = ComposeInverseTRS(Vector3(0.0f, 0.0f, 0.0f), state.orientation, state.scaling);
+	return matrix * globalDir;
+}
+
 TransformState Interpolate(TransformState const &a, TransformState const &b, float t) {
 	return LerpState(a, b, t);
 }

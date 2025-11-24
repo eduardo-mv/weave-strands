@@ -3,6 +3,7 @@
 #include <algorithm>
 
 #include "weave/system/math/Random.h"
+#include "weave/system/math/Interpolation.h"
 
 namespace weave::particles {
 

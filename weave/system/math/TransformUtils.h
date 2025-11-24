@@ -1,11 +1,7 @@
 #pragma once
 
 #include "VectorMath.h"
-
-namespace weave {
-class Transform;
-struct TransformState;
-}
+#include "TransformState.h"
 
 namespace weave::transform_utils {
 
@@ -25,6 +21,8 @@ Vector3 GetFrontAxis(TransformState const &state);
 Plane AxisPlane(TransformState const &state, unsigned int axis);
 Vector3 ToGlobal(TransformState const &state, Vector3 const &localPoint);
 Vector3 ToLocal(TransformState const &state, Vector3 const &globalPoint);
+Vector3 ToGlobalDirection(TransformState const &state, Vector3 const &localDir);
+Vector3 ToLocalDirection(TransformState const &state, Vector3 const &globalDir);
 
 TransformState Interpolate(TransformState const &a, TransformState const &b, float t);
 
