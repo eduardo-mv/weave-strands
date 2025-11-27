@@ -70,23 +70,28 @@
 #include <algorithm>
 
 #include "weave/system/blender/Blender.h"
-#include "weave/system/blender/ArithmeticNodes.h"
+#include "weave/particles/nodes/ArithmeticNodes.h"
 #include "weave/animation/blender/samplers/DataClipSampler.h"
 #include "weave/animation/blender/samplers/SignalSampler.h"
 
 #include "weave/particles/ParticleBuffer.h"
-
+#include "weave/particles/ParticleMachine.h"
+#include "weave/particles/nodes/ParticleNode.h"
+#include "weave/particles/nodes/ParticleEmitter.h"
+#include "weave/particles/nodes/CommitEmissionNode.h"
 
 #include "weave/system/math/Interpolation.h"
+#include "weave/scenegraph/SceneGraph.h"
 /*
 Port Anim to Blenders
-Port particles to Blenders
 */
 
 using namespace weave;
 using namespace weave::blender;
 
 namespace {
+
+using weave::algebra::equivalent;
 
 std::array<float, 3> HslToRgb(float h, float s, float l) {
 	auto clamp01 = [](float v) { return std::clamp(v, 0.0f, 1.0f); };
@@ -147,6 +152,60 @@ struct MyBuffer {
 struct BarVertex {
 	float position[2];
 	float color[3];
+};
+
+struct ParticleTestWriter : particles::ParticleNode<> {
+	ParticleTestWriter(float lifeValue, float maxLifeValue)
+		: lifeValue(lifeValue), maxLifeValue(maxLifeValue) {}
+
+	void ExecuteNode() override {
+		wroteCount = 0;
+		auto& context = GetContext();
+		for (auto* buffer : context.buffers) {
+			if (!buffer) {
+				continue;
+			}
+			for (auto&& [life, maxLife] : buffer->EmissionSpan<particles::layout::LifeTime, particles::layout::MaxLifeTime>()) {
+				life.lifeTime = lifeValue;
+				maxLife.maxLifeTime = maxLifeValue;
+				++wroteCount;
+			}
+		}
+	}
+
+	float lifeValue{};
+	float maxLifeValue{};
+	size_t wroteCount{};
+};
+
+struct ParticleTestInspector : particles::ParticleNode<> {
+	ParticleTestInspector(float lifeValue, float maxLifeValue)
+		: lifeValue(lifeValue), maxLifeValue(maxLifeValue) {}
+
+	void ExecuteNode() override {
+		verifiedCount = 0;
+		mismatchCount = 0;
+		auto& context = GetContext();
+		for (auto* buffer : context.buffers) {
+			if (!buffer) {
+				continue;
+			}
+			for (auto&& [life, maxLife] : buffer->EditableSpan<particles::layout::LifeTime, particles::layout::MaxLifeTime>()) {
+				const bool matches = std::abs(life.lifeTime - lifeValue) < 1e-5f
+					&& std::abs(maxLife.maxLifeTime - maxLifeValue) < 1e-5f;
+				if (matches) {
+					++verifiedCount;
+				} else {
+					++mismatchCount;
+				}
+			}
+		}
+	}
+
+	float lifeValue{};
+	float maxLifeValue{};
+	size_t verifiedCount{};
+	size_t mismatchCount{};
 };
 
 } // namespace
@@ -548,42 +607,90 @@ void TestNodes() {
 int TestParticleBuffer() {
 	using namespace weave::particles;
 
-	// Create a ParticleBuffer with an initial particle size of 2 bytes
-	ParticleBuffer buffer(0, 2);
+	struct TestFieldA { std::byte value; };
+	struct TestFieldB { std::byte value; };
+	static_assert(sizeof(TestFieldA) == 1);
+	static_assert(sizeof(TestFieldB) == 1);
+
+	ParticleLayout layout;
+	layout.particleByteSize = sizeof(TestFieldA) + sizeof(TestFieldB);
+	layout.SetOffset<TestFieldA>(0);
+	layout.SetOffset<TestFieldB>(sizeof(TestFieldA));
+
+	ParticleBuffer buffer(0, layout);
 
 	// Add 10 particles to the emission buffer
 	buffer.AddEmissionParticles(10);
 
 	// Publish the emitted particles to the editable buffer
-	buffer.PublishEmittedParticles();
+	buffer.CommitEmittedParticles();
 
 	// Check if the buffer size is correct
-	assert(buffer.GetBufferByteSize() == 20);
+	assert(buffer.GetBufferByteSize() == 10 * layout.particleByteSize);
 
 	// Access the editable buffer as a particle_span
-	auto editableBuffer = buffer.EditableBuffer();
+	auto editableBuffer = buffer.EditableSpan<TestFieldA, TestFieldB>();
 
 	// Iterate through the particles in the editable buffer and set their values
-	for (size_t i = 0; i < editableBuffer.size(); ++i) {
-		std::byte& byte1 = editableBuffer[i];
-		byte1 = static_cast<std::byte>(i);
-
-		std::byte& byte2 = editableBuffer.CastOffset<std::byte>(&byte1, 1);
-		byte2 = static_cast<std::byte>(i + 1);
+	size_t index = 0;
+	for (auto&& [fieldA, fieldB] : editableBuffer) {
+		fieldA.value = static_cast<std::byte>(index);
+		fieldB.value = static_cast<std::byte>(index + 1);
+		++index;
 	}
 
 	// Verify the data in the editable buffer
-	for (size_t i = 0; i < editableBuffer.size(); ++i) {
-		assert(static_cast<int>(editableBuffer[i]) == i);
-		assert(static_cast<int>(editableBuffer.CastOffset<std::byte>(&editableBuffer[i], 1)) == i + 1);
+	index = 0;
+	for (auto&& [fieldA, fieldB] : editableBuffer) {
+		assert(std::to_integer<int>(fieldA.value) == static_cast<int>(index));
+		assert(std::to_integer<int>(fieldB.value) == static_cast<int>(index + 1));
+		++index;
 	}
 
 	// Kill 3 particles starting from the 2nd particle
 	buffer.KillParticles(1, 3);
 
 	// Verify the data in the editable buffer after killing particles
-	auto newEditableBuffer = buffer.EditableBuffer();
+	auto newEditableBuffer = buffer.EditableSpan<TestFieldA, TestFieldB>();
 	assert(newEditableBuffer.size() == 7);
+
+	// Verify offsetted span access using explicit offsets
+	auto offsets = buffer.GetLayout().GetOffsets<TestFieldA, TestFieldB>();
+	auto skippedEditable = buffer.EditableSpan<TestFieldA, TestFieldB>(1, offsets);
+	assert(skippedEditable.size() == newEditableBuffer.size() - 1);
+	auto firstSkipped = skippedEditable[0];
+	auto referenceTuple = newEditableBuffer[1];
+	assert(std::to_integer<int>(std::get<0>(firstSkipped).value) ==
+		std::to_integer<int>(std::get<0>(referenceTuple).value));
+	assert(std::to_integer<int>(std::get<1>(firstSkipped).value) ==
+		std::to_integer<int>(std::get<1>(referenceTuple).value));
+
+	// Emit two more particles using the variadic AddEmissionParticles helper
+	auto emissionView = buffer.AddEmissionParticles<TestFieldA, TestFieldB>(2);
+	assert(emissionView.size() == 2);
+	int emissionIndex = 0;
+	for (auto&& [fieldA, fieldB] : emissionView) {
+		fieldA.value = static_cast<std::byte>(10 + emissionIndex);
+		fieldB.value = static_cast<std::byte>(20 + emissionIndex);
+		++emissionIndex;
+	}
+
+	// Ensure EmissionSpan reports the pending particles
+	auto pendingEmission = buffer.EmissionSpan<TestFieldA, TestFieldB>();
+	assert(pendingEmission.size() == 2);
+
+	// Commit and verify editable particles now include the emitted ones
+	buffer.CommitEmittedParticles();
+	auto committedEditable = buffer.EditableSpan<TestFieldA, TestFieldB>();
+	assert(committedEditable.size() == 9);
+	assert(std::to_integer<int>(std::get<0>(committedEditable[8]).value) == 10);
+	assert(std::to_integer<int>(std::get<1>(committedEditable[8]).value) == 20);
+
+	// Active span exposes a const view over the editable bytes
+	auto activeSpan = buffer.ActiveSpan();
+	assert(activeSpan.size() == committedEditable.size());
+	auto [firstByte] = activeSpan[0];
+	assert(firstByte == std::get<0>(committedEditable[0]).value);
 
 	
 	std::cout << "All tests passed!" << std::endl;
@@ -627,19 +734,19 @@ public:
 		}
 		else if (inputData.HasMidiNote()) {
 			auto event = inputData.GetMidiNote();
-			std::cout << std::format("{}, {}, {}, {}", event.note, event.channel, event.velocity, event.pressed);
+			std::cout << std::format("Note: {}, {}, {}, {}", event.note, event.channel, event.velocity, event.pressed);
 		}
 		else if (inputData.HasMidiControl()) {
 			auto event = inputData.GetMidiControl();
-			std::cout << std::format("{}, {}, {}", event.control, event.channel, event.value);
+			std::cout << std::format("Ctrl: {}, {}, {}", event.control, event.channel, event.value);
 		}
 		else if (inputData.HasMidiPitchBend()) {
 			auto event = inputData.GetMidiPitchBend();
-			std::cout << std::format("{}, {}", event.channel, event.value);
+			std::cout << std::format("PitchBend: {}, {}", event.channel, event.value);
 		}
 		else if (inputData.HasMidiProgram()) {
 			auto event = inputData.GetMidiProgram();
-			std::cout << std::format("{}, {}", event.channel, event.program);
+			std::cout << std::format("Program: {}, {}", event.channel, event.program);
 		}
 
 		else if (inputData.HasDeviceState()) {
@@ -1052,6 +1159,146 @@ void main() {
     }
 }
 
+bool RunSceneGraphSelfTest() {
+	using weave::scenegraph::SceneGraph;
+
+	SceneGraph graph;
+
+	auto rootChildIndex = graph.CreateNode("root_child");
+	[[maybe_unused]] auto branchIndex = graph.CreateNode("branch", rootChildIndex);
+	auto leafIndex = graph.CreateNode("leaf", "branch");
+
+	if (graph.FindNode("leaf") != leafIndex) {
+		return false;
+	}
+
+	const bool touchedRootChild = graph.TouchNode(rootChildIndex, [](Transform &transform) {
+		transform.Translate(1.0f, 0.0f, 0.0f);
+	});
+	const bool touchedBranch = graph.TouchNode("branch", [](Transform &transform) {
+		transform.Translate(0.0f, 2.0f, 0.0f);
+	});
+	const bool touchedLeaf = graph.TouchNode(leafIndex, [](Transform &transform) {
+		transform.Translate(0.0f, 0.0f, 3.0f);
+	});
+
+	if (!(touchedRootChild && touchedBranch && touchedLeaf)) {
+		return false;
+	}
+
+	graph.UpdateWorldTransforms();
+
+	Vector3 rootChildWorld{};
+	Vector3 branchWorld{};
+	Vector3 leafWorld{};
+	bool rootChildSeen = false;
+	bool branchSeen = false;
+	bool leafSeen = false;
+
+	graph.Traverse([&](SceneGraph::NodeIndex, SceneGraph::Node const &node) {
+		if (node.name.empty()) {
+			return;
+		}
+
+		Vector3 position(node.worldTransform.W.x, node.worldTransform.W.y, node.worldTransform.W.z);
+		if (node.name == "root_child") {
+			rootChildWorld = position;
+			rootChildSeen = true;
+		} else if (node.name == "branch") {
+			branchWorld = position;
+			branchSeen = true;
+		} else if (node.name == "leaf") {
+			leafWorld = position;
+			leafSeen = true;
+		}
+	});
+
+	const bool transformsOk = rootChildSeen && branchSeen && leafSeen
+		&& equivalent(rootChildWorld, Vector3(1.0f, 0.0f, 0.0f))
+		&& equivalent(branchWorld, Vector3(1.0f, 2.0f, 0.0f))
+		&& equivalent(leafWorld, Vector3(1.0f, 2.0f, 3.0f));
+
+	const bool removeLeafByIndex = graph.RemoveNode(leafIndex);
+	const bool lookupAfterLeafRemoval = graph.FindNode("leaf") == SceneGraph::Node::kInvalidIndex;
+
+	auto reusedLeafIndex = graph.CreateNode("reused_leaf", "branch");
+	const bool reusedSlot = reusedLeafIndex == leafIndex;
+
+	const bool removeReusedByName = graph.RemoveNode("reused_leaf");
+	const bool removeBranchByName = graph.RemoveNode("branch");
+	const bool branchMissing = graph.FindNode("branch") == SceneGraph::Node::kInvalidIndex;
+	const bool missingNodeLookup = graph.FindNode("missing") == SceneGraph::Node::kInvalidIndex;
+
+	const bool removeRootFails = !graph.RemoveNode(0);
+	const bool touchInvalidIndex = !graph.TouchNode(SceneGraph::Node::kInvalidIndex, [](Transform &transform) {
+		transform.Translate(42.0f, 0.0f, 0.0f);
+	});
+	const bool touchMissingName = !graph.TouchNode("missing_name", [](Transform &transform) {
+		transform.Translate(0.0f, 42.0f, 0.0f);
+	});
+
+	graph.Reset();
+	const bool resetClearsNames = graph.FindNode("root_child") == SceneGraph::Node::kInvalidIndex
+		&& graph.FindNode("branch") == SceneGraph::Node::kInvalidIndex;
+	const auto postResetIndex = graph.CreateNode("post_reset");
+	const bool resetAllowsCreate = postResetIndex != SceneGraph::Node::kInvalidIndex;
+
+	return transformsOk
+		&& removeLeafByIndex
+		&& lookupAfterLeafRemoval
+		&& reusedSlot
+		&& removeReusedByName
+		&& removeBranchByName
+		&& branchMissing
+		&& missingNodeLookup
+		&& removeRootFails
+		&& touchInvalidIndex
+		&& touchMissingName
+		&& resetClearsNames
+		&& resetAllowsCreate;
+}
+
+bool RunParticleMachineSelfTest() {
+	using namespace weave::particles;
+
+	constexpr uint64_t kParticlesToEmit = 4;
+	constexpr float kLifeValue = 0.5f;
+	constexpr float kMaxLifeValue = 5.0f;
+
+	ParticleMachine machine;
+	ParticleBuffer buffer(0, ParticleLayout::BuildStdParticleLayout());
+	machine.AddBuffer(buffer);
+	machine.SetSamplingData(1.0f, 1, true);
+
+	auto emitter = machine.Graph().CreateNode<ParticleEmitter>();
+	emitter->input.SetDefaultValue<ParticleEmitter::MinEmit>(static_cast<float>(kParticlesToEmit));
+	emitter->input.SetDefaultValue<ParticleEmitter::MaxEmit>(static_cast<float>(kParticlesToEmit));
+	emitter->input.SetDefaultValue<ParticleEmitter::Rate>(1.0f);
+	emitter->input.SetDefaultValue<ParticleEmitter::MinFrequency>(0.0f);
+	emitter->input.SetDefaultValue<ParticleEmitter::MaxFrequency>(0.0f);
+	emitter->input.SetDefaultValue<ParticleEmitter::MaxRuntime>(-1.0);
+	emitter->input.SetDefaultValue<ParticleEmitter::MaxParticles>(kParticlesToEmit);
+
+	auto writer = machine.Graph().CreateNode<ParticleTestWriter>(kLifeValue, kMaxLifeValue);
+	auto commit = machine.Graph().CreateNode<particles::CommitEmissionNode>();
+	auto inspector = machine.Graph().CreateNode<ParticleTestInspector>(kLifeValue, kMaxLifeValue);
+
+	machine.Graph().AddRootTrigger(emitter);
+	emitter->ConnectTrigger(writer);
+	writer->ConnectTrigger(commit);
+	commit->ConnectTrigger(inspector);
+
+	machine.Execute();
+
+	auto editableSpan = buffer.EditableSpan<particles::layout::LifeTime, particles::layout::MaxLifeTime>();
+	const size_t editableCount = editableSpan.size();
+
+	return writer->wroteCount == kParticlesToEmit
+		&& inspector->verifiedCount == kParticlesToEmit
+		&& inspector->mismatchCount == 0
+		&& editableCount == kParticlesToEmit;
+}
+
 #ifdef _WIN32
 int RunWin32Harness()
 {
@@ -1266,7 +1513,6 @@ int RunWaylandHarness()
     weave::input::wayland::WaylandGamepadFeed gamepadFeed;
 	weave::input::wayland::WaylandMidiFeed midiFeed;
 	
-
     {
         auto processor = std::make_shared<MyInputLogger>();
         processor->SetPriority(0);
@@ -1376,6 +1622,15 @@ int RunWaylandHarness()
 
 int main()
 {
+	if (!RunSceneGraphSelfTest()) {
+		std::cerr << "Scene graph self-test failed.\n";
+		return -1;
+	}
+
+	if (!RunParticleMachineSelfTest()) {
+		std::cerr << "Particle machine self-test failed.\n";
+		return -1;
+	}
 #ifdef _WIN32
     return RunWin32Harness();
 #else

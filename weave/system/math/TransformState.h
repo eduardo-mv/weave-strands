@@ -6,11 +6,11 @@ namespace weave {
 
 struct TransformState final {
 	Vector3 position{ 0.0f, 0.0f, 0.0f };
-	Vector3 scaling{ 1.0f, 1.0f, 1.0f };
 	Quaternion orientation{};
+	Vector3 scaling{ 1.0f, 1.0f, 1.0f };
 
 	constexpr TransformState() = default;
-	TransformState(Vector3 const &pos, Vector3 const &scale, Quaternion const &orient);
+	TransformState(Vector3 const &pos, Quaternion const &orient, Vector3 const &scale);
 	explicit TransformState(Matrix4x4 const &matrix);
 	TransformState(TransformState const &other) = default;
 	TransformState &operator=(TransformState const &other) = default;

@@ -82,10 +82,10 @@ bool BuildLookOrientation(Vector3 forward, Vector3 upInput, bool frontIsZPositiv
 
 }
 
-TransformState::TransformState(Vector3 const &pos, Vector3 const &scale, Quaternion const &orient)
+TransformState::TransformState(Vector3 const &pos, Quaternion const &orient, Vector3 const &scale)
 	: position(pos)
-	, scaling(scale)
-	, orientation(orient) {
+	, orientation(orient) 
+	, scaling(scale) {
 	orientation.Normalize();
 }
 

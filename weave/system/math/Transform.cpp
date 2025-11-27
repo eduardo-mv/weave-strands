@@ -6,77 +6,22 @@
 
 namespace weave {
 
-Matrix4x4 MatrixCache::GetMatrix(TransformState const &state, uint64_t revision) const {
-	UpdateCache(state, revision);
-	return cache.GetCache([](Cache &cacheTarget) {
-		return cacheTarget.matrix;
-	});
-}
-
-Matrix4x4 MatrixCache::GetInverseMatrix(TransformState const &state, uint64_t revision) const {
-	UpdateCache(state, revision);
-	return cache.GetCache([](Cache &cacheTarget) {
-		return cacheTarget.inverse;
-	});
-}
-
-void MatrixCache::UpdateCache(TransformState const &state, uint64_t revision) const {
-	cache.UpdateCache(revision, [&](Cache &cacheTarget) {
-		cacheTarget.matrix = transform_utils::ComposeTRS(state.position, state.orientation, state.scaling);
-		cacheTarget.inverse = cacheTarget.matrix.Inverted();
-	});
-}
-
-TransformState TransformStateCache::GetState(TransformState const &state, uint64_t revision) const {
-	UpdateCache(state, revision);
-	return cache.GetCache([](TransformState const &cacheTarget) {
-		return cacheTarget;
-	});
-}
-
-Vector3 TransformStateCache::GetPosition(TransformState const &state, uint64_t revision) const {
-	UpdateCache(state, revision);
-	return cache.GetCache([](TransformState const &cacheTarget) {
-		return cacheTarget.position;
-	});
-}
-
-Vector3 TransformStateCache::GetScaling(TransformState const &state, uint64_t revision) const {
-	UpdateCache(state, revision);
-	return cache.GetCache([](TransformState const &cacheTarget) {
-		return cacheTarget.scaling;
-	});
-}
-
-Quaternion TransformStateCache::GetOrientation(TransformState const &state, uint64_t revision) const {
-	UpdateCache(state, revision);
-	return cache.GetCache([](TransformState const &cacheTarget) {
-		return cacheTarget.orientation;
-	});
-}
-
-void TransformStateCache::UpdateCache(TransformState const &state, uint64_t revision) const {
-	cache.UpdateCache(revision, [&](TransformState &cacheTarget) {
-		cacheTarget = state;
-	});
-}
-
 Transform::Transform() = default;
 
 Transform::Transform(Vector3 position) {
-	std::lock_guard<std::mutex> lock(stateMutex);
-	state = TransformState(position, Vector3(1.0f, 1.0f, 1.0f), Quaternion());
+	transformState.Touch([&](auto& mutableState){
+		mutableState = TransformState(position, Quaternion(), Vector3(1.0f, 1.0f, 1.0f));
+	});
 }
 
-Transform::Transform(Vector3 position, Vector3 scaling, Quaternion orientation)
-	: state(position, scaling, orientation) {
-	std::lock_guard<std::mutex> lock(stateMutex);
+Transform::Transform(Vector3 position, Vector3 scaling, Quaternion orientation) {
+	transformState.Touch([&](auto& mutableState){
+		mutableState = TransformState(position, orientation, scaling);
+	});
 }
 
 Transform::Transform(Matrix4x4 const &matrix) {
-	std::lock_guard<std::mutex> lock(stateMutex);
-	state = matrix;
-	MarkStateDirty();
+	*this = matrix;
 }
 
 Transform::Transform(Transform const &other)
@@ -109,51 +54,49 @@ Transform &Transform::operator=(Transform &&other) noexcept {
 }
 
 Transform &Transform::operator=(Matrix4x4 const &matrix) {
-	std::lock_guard<std::mutex> lock(stateMutex);
-	state = matrix;
-	MarkStateDirty();
+	transformState.Touch([&](auto& mutableState){
+		mutableState = matrix;
+	});
 	return *this;
 }
 
 Transform &Transform::operator=(TransformState const &state_) {
-	std::lock_guard<std::mutex> lock(stateMutex);
-	state = state_;
-	MarkStateDirty();
+	SetState(state_);
 	return *this;
 }
 
 void Transform::Identity() {
-	std::lock_guard<std::mutex> lock(stateMutex);
-	state.Identity();
-	MarkStateDirty();
+	transformState.Touch([&](auto& mutableState){
+		mutableState.Identity();
+	});
 }
 
 TransformState Transform::GetState() const {
-	uint64_t revision = stateRevision.load(std::memory_order_acquire);
-	return trsCache.GetState(state, revision);
+	return transformState.Snapshot();
 }
 
 void Transform::SetState(TransformState const &state_) {
-	std::lock_guard<std::mutex> lock(stateMutex);
-	state = state_;
-	MarkStateDirty();
+	transformState.Touch([&](auto& mutableState){
+		mutableState = state_;
+	});
 }
 
 void Transform::SetPosition(Vector3 const &position) {
-	std::lock_guard<std::mutex> lock(stateMutex);
-	state.SetPosition(position);
-	MarkStateDirty();
+	transformState.Touch([&](auto& mutableState){
+		mutableState.SetPosition(position);
+	});
 }
 
 Vector3 Transform::GetPosition() const {
-	uint64_t revision = stateRevision.load(std::memory_order_acquire);
-	return trsCache.GetPosition(state, revision);
+	return transformState.Snapshot([](auto const& snapshot) {
+		return snapshot.GetPosition();
+	});
 }
 
 void Transform::Translate(Vector3 const &offset) {
-	std::lock_guard<std::mutex> lock(stateMutex);
-	state.Translate(offset);
-	MarkStateDirty();
+	transformState.Touch([&](auto& mutableState){
+		mutableState.Translate(offset);
+	});
 }
 
 void Transform::Translate(Vector4 const &offset) {
@@ -165,20 +108,21 @@ void Transform::Translate(float x, float y, float z) {
 }
 
 void Transform::SetScaling(Vector3 const &scale) {
-	std::lock_guard<std::mutex> lock(stateMutex);
-	state.SetScaling(scale);
-	MarkStateDirty();
+	transformState.Touch([&](auto& mutableState){
+		mutableState.SetScaling(scale);
+	});
 }
 
 Vector3 Transform::GetScaling() const {
-	uint64_t revision = stateRevision.load(std::memory_order_acquire);
-	return trsCache.GetScaling(state, revision);
+	return transformState.Snapshot([](auto const& snapshot) {
+		return snapshot.GetScaling();
+	});
 }
 
 void Transform::Scale(Vector3 const &factor) {
-	std::lock_guard<std::mutex> lock(stateMutex);
-	state.Scale(factor);
-	MarkStateDirty();
+	transformState.Touch([&](auto& mutableState){
+		mutableState.Scale(factor);
+	});
 }
 
 void Transform::Scale(float x, float y, float z) {
@@ -186,26 +130,27 @@ void Transform::Scale(float x, float y, float z) {
 }
 
 void Transform::SetOrientation(Quaternion const &orientation) {
-	std::lock_guard<std::mutex> lock(stateMutex);
-	state.SetOrientation(orientation);
-	MarkStateDirty();
+	transformState.Touch([&](auto& mutableState){
+		mutableState.SetOrientation(orientation);
+	});
 }
 
 Quaternion Transform::GetOrientation() const {
-	uint64_t revision = stateRevision.load(std::memory_order_acquire);
-	return trsCache.GetOrientation(state, revision);
+	return transformState.Snapshot([](auto const& snapshot) {
+		return snapshot.GetOrientation();
+	});
 }
 
 void Transform::RotateScaled(Vector3 const &scaledAxis) {
-	std::lock_guard<std::mutex> lock(stateMutex);
-	state.RotateScaled(scaledAxis);
-	MarkStateDirty();
+	transformState.Touch([&](auto& mutableState){
+		mutableState.RotateScaled(scaledAxis);
+	});
 }
 
 void Transform::Rotate(float radians, float x, float y, float z, bool normalize) {
-	std::lock_guard<std::mutex> lock(stateMutex);
-	state.Rotate(radians, x, y, z, normalize);
-	MarkStateDirty();
+	transformState.Touch([&](auto& mutableState){
+		mutableState.Rotate(radians, x, y, z, normalize);
+	});
 }
 
 void Transform::Rotate(float radians, Vector3 const &axis, bool normalize) {
@@ -213,9 +158,9 @@ void Transform::Rotate(float radians, Vector3 const &axis, bool normalize) {
 }
 
 void Transform::Rotate(float pitch, float yaw, float roll) {
-	std::lock_guard<std::mutex> lock(stateMutex);
-	state.Rotate(pitch, yaw, roll);
-	MarkStateDirty();
+	transformState.Touch([&](auto& mutableState){
+		mutableState.Rotate(pitch, yaw, roll);
+	});
 }
 
 void Transform::Rotate(Vector3 const &pitchYawRoll) {
@@ -223,66 +168,75 @@ void Transform::Rotate(Vector3 const &pitchYawRoll) {
 }
 
 void Transform::RotatePitch(float pitch) {
-	std::lock_guard<std::mutex> lock(stateMutex);
-	state.RotatePitch(pitch);
-	MarkStateDirty();
+	transformState.Touch([&](auto& mutableState){
+		mutableState.RotatePitch(pitch);
+	});
 }
 
 void Transform::RotateYaw(float yaw) {
-	std::lock_guard<std::mutex> lock(stateMutex);
-	state.RotateYaw(yaw);
-	MarkStateDirty();
+	transformState.Touch([&](auto& mutableState){
+		mutableState.RotateYaw(yaw);
+	});
 }
 
 void Transform::RotateRoll(float roll) {
-	std::lock_guard<std::mutex> lock(stateMutex);
-	state.RotateRoll(roll);
-	MarkStateDirty();
+	transformState.Touch([&](auto& mutableState){
+		mutableState.RotateRoll(roll);
+	});
 }
 
 void Transform::AlignRight(Vector3 const &desiredRight) {
-	std::lock_guard<std::mutex> lock(stateMutex);
-	if (state.AlignRight(desiredRight)) {
-		MarkStateDirty();
-	}
+	transformState.Touch([&](auto& mutableState){
+		mutableState.AlignRight(desiredRight);
+	});
 }
 
 void Transform::AlignUp(Vector3 const &desiredUp) {
-	std::lock_guard<std::mutex> lock(stateMutex);
-	if (state.AlignUp(desiredUp)) {
-		MarkStateDirty();
-	}
+	transformState.Touch([&](auto& mutableState){
+		mutableState.AlignUp(desiredUp);
+	});
 }
 
 void Transform::AlignFront(Vector3 const &desiredFront) {
-	std::lock_guard<std::mutex> lock(stateMutex);
-	if (state.AlignFront(desiredFront)) {
-		MarkStateDirty();
-	}
+	transformState.Touch([&](auto& mutableState){
+		mutableState.AlignFront(desiredFront);
+	});
 }
 
 void Transform::LookAt(Vector3 const &point, Vector3 const &worldUp, bool frontIsZPositive) {
-	std::lock_guard<std::mutex> lock(stateMutex);
-	if (state.LookAt(point, worldUp, frontIsZPositive)) {
-		MarkStateDirty();
-	}
+	transformState.Touch([&](auto& mutableState){
+		mutableState.LookAt(point, worldUp, frontIsZPositive);
+	});
 }
 
 void Transform::LookAlign(Vector3 const &point, bool frontIsZPositive) {
-	std::lock_guard<std::mutex> lock(stateMutex);
-	if (state.LookAlign(point, frontIsZPositive)) {
-		MarkStateDirty();
-	}
+	transformState.Touch([&](auto& mutableState){
+		mutableState.LookAlign(point, frontIsZPositive);
+	});
 }
 
 Matrix4x4 Transform::GetTransformMatrix() const {
-	uint64_t revision = stateRevision.load(std::memory_order_acquire);
-	return matrixCache.GetMatrix(state, revision);
+	UpdateMatrixCache();
+	return matrixCache.GetCache([](MatrixCache &cacheTarget) {
+		return cacheTarget.matrix;
+	});
 }
 
 Matrix4x4 Transform::GetInverseTransformMatrix() const {
-	uint64_t revision = stateRevision.load(std::memory_order_acquire);
-	return matrixCache.GetInverseMatrix(state, revision);
+	UpdateMatrixCache();
+	return matrixCache.GetCache([](MatrixCache &cacheTarget) {
+		return cacheTarget.inverse;
+	});
+
+}
+
+void Transform::UpdateMatrixCache() const {
+	auto [snapshot, snapRevision] = transformState.SnapshotAndRevision();
+	matrixCache.UpdateCache(snapRevision, [&](MatrixCache &cacheTarget, uint64_t& revision) {
+		cacheTarget.matrix = transform_utils::ComposeTRS(snapshot.position, snapshot.orientation, snapshot.scaling);
+		cacheTarget.inverse = cacheTarget.matrix.Inverted();
+		revision = snapRevision;
+	});
 }
 
 Matrix4x4 Transform::operator*(Transform const &other) const {
@@ -317,8 +271,8 @@ Vector3 Transform::InverseTransformDirection(Vector3 const &globalDir) const {
 	return transform_utils::ToLocalDirection(snapshot, globalDir);
 }
 
-void Transform::MarkStateDirty() {
-	stateRevision.fetch_add(1, std::memory_order_release);
+uint64_t Transform::GetRevision() const {
+	return transformState.Revision();
 }
 
 }

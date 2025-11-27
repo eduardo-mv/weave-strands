@@ -5,38 +5,10 @@
 #include <mutex>
 
 #include "weave/system/memory/BufferedCache.h"
+#include "weave/system/memory/ProtectedState.h"
 #include "TransformState.h"
 
 namespace weave {
-
-class MatrixCache final {
-public:
-
-	Matrix4x4 GetMatrix(TransformState const &state, uint64_t revision) const;
-	Matrix4x4 GetInverseMatrix(TransformState const &state, uint64_t revision) const;
-
-private:
-	void UpdateCache(TransformState const &state, uint64_t revision) const;
-
-	struct Cache {
-		Matrix4x4 matrix;
-		Matrix4x4 inverse;
-	};
-
-	mutable BufferedCache<Cache> cache;
-};
-
-class TransformStateCache final {
-public:
-	TransformState GetState(TransformState const &state, uint64_t revision) const;
-	Vector3 GetPosition(TransformState const &state, uint64_t revision) const;
-	Vector3 GetScaling(TransformState const &state, uint64_t revision) const;
-	Quaternion GetOrientation(TransformState const &state, uint64_t revision) const;
-
-private:
-	void UpdateCache(TransformState const &state, uint64_t revision) const;
-	mutable BufferedCache<TransformState> cache;
-};
 
 // Public facing transform object composed from a state + cache pair.
 class Transform final {
@@ -93,15 +65,18 @@ public:
 	operator TransformState() const { return GetState(); }
 	Vector3 TransformDirection(Vector3 const &localDir) const;
 	Vector3 InverseTransformDirection(Vector3 const &globalDir) const;
+	uint64_t GetRevision() const;
 
 private:
-	void MarkStateDirty();
+	struct MatrixCache {
+		Matrix4x4 matrix;
+		Matrix4x4 inverse;
+	};
 
-	TransformState state;
-	mutable TransformStateCache trsCache;
-	mutable MatrixCache matrixCache;
-	std::atomic_uint64_t stateRevision { 1 };
-	std::mutex stateMutex;
+	void UpdateMatrixCache() const;
+
+	ProtectedState<TransformState> transformState;
+	BufferedCache<MatrixCache> matrixCache;
 };
 
 }
