@@ -657,11 +657,16 @@ void WaylandMidiFeed::Test() {
 
     struct Note { int note; int velocity; int duration_ms; };
     const Note tune[] = {
-        {60, 30, 300}, {64, 30, 300}, {67, 30, 300}, {72, 30, 600},
+        {60, 30, 300}, {64, 30, 300}, {67, 30, 300}, {62, 30, 600},
         {67, 30, 300}, {64, 30, 300}, {60, 30, 600},
-    };
+  };
+
+   struct Ctrl { int ctrl; int value; };
+   
 
     std::jthread play([seq_handle, out_port, tune] {
+        Ctrl ctrl { .ctrl = 74, .value = 0};
+        int delta = 1;
         while (true) {
             for (auto const& n : tune) {
                 snd_seq_event_t ev;
@@ -670,7 +675,7 @@ void WaylandMidiFeed::Test() {
                 snd_seq_ev_set_subs(&ev);
                 snd_seq_ev_set_direct(&ev);
                 ev.type = SND_SEQ_EVENT_NOTEON;
-                ev.data.note.channel = 0;
+                ev.data.note.channel = 1;
                 ev.data.note.note = n.note;
                 ev.data.note.velocity = n.velocity;
                 snd_seq_event_output_direct(seq_handle, &ev);
@@ -680,10 +685,32 @@ void WaylandMidiFeed::Test() {
                 snd_seq_ev_set_subs(&ev);
                 snd_seq_ev_set_direct(&ev);
                 ev.type = SND_SEQ_EVENT_NOTEOFF;
-                ev.data.note.channel = 0;
+                ev.data.note.channel = 1;
                 ev.data.note.note = n.note;
                 ev.data.note.velocity = 0;
                 snd_seq_event_output_direct(seq_handle, &ev);
+
+                snd_seq_ev_clear(&ev);
+                snd_seq_ev_set_source(&ev, out_port);
+                snd_seq_ev_set_subs(&ev);
+                snd_seq_ev_set_direct(&ev);
+                ev.type = SND_SEQ_EVENT_CONTROLLER;
+                ev.data.control.param = ctrl.ctrl;
+                ev.data.control.channel = 1;
+                ev.data.control.value = ctrl.value;
+                snd_seq_event_output_direct(seq_handle, &ev);
+
+                ctrl.ctrl += delta;
+
+                if(ctrl.ctrl >= 1270) {
+                    ctrl.ctrl = 1270;
+                    delta = -1;
+                }
+                else if(ctrl.ctrl <= 0) { 
+                    ctrl.ctrl = 0;
+                    delta = 1;
+                }
+
             }
             std::this_thread::sleep_for(std::chrono::milliseconds(500));
         }
@@ -712,6 +739,8 @@ void WaylandMidiFeed::Test() {
             std::cout << "    Type: 0x" << std::hex << type << std::dec << std::endl;
         }
     }
+
+    std::this_thread::sleep_for(std::chrono::minutes(10));
 
     snd_seq_close(seq_handle);
 }

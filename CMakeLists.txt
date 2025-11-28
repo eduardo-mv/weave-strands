@@ -39,16 +39,21 @@ add_subdirectory(weave/platform)
 add_subdirectory(weave/animation)
 add_subdirectory(weave/input)
 add_subdirectory(weave/particles)
-
-
-
-
+add_subdirectory(weave/scene)
+add_subdirectory(weave/scenegraph)
+set(WEAVE_TEST_SOURCES
+    WeaveTests.cpp
+    WeaveTests.h
+    tests/blender/NodeTests.cpp
+    tests/particles/ParticleBufferTests.cpp
+    tests/particles/ParticleMachineTests.cpp
+    tests/scenegraph/SceneGraphTests.cpp
+)
 if(WEAVE_BUILD_DEMO)
     if(WIN32)
         add_executable(WeaveTest)
         target_sources(WeaveTest PRIVATE
-            WeaveTests.cpp
-            WeaveTests.h
+            ${WEAVE_TEST_SOURCES}
         )
         weave_apply_default_settings(WeaveTest)
         target_link_libraries(WeaveTest PRIVATE
@@ -57,13 +62,14 @@ if(WEAVE_BUILD_DEMO)
             WeaveAnimationLib
             WeaveInputLib
             WeaveParticlesLib
+            WeaveSceneLib
+            WeaveSceneGraphLib
         )
     elseif(UNIX AND NOT APPLE)
         if(WEAVE_ENABLE_WAYLAND)
             add_executable(WeaveTest)
             target_sources(WeaveTest PRIVATE
-                WeaveTests.cpp
-                WeaveTests.h
+                ${WEAVE_TEST_SOURCES}
             )
             weave_apply_default_settings(WeaveTest)
             target_link_libraries(WeaveTest PRIVATE
@@ -72,6 +78,8 @@ if(WEAVE_BUILD_DEMO)
                 WeaveAnimationLib
                 WeaveInputLib
                 WeaveParticlesLib
+                WeaveSceneLib
+                WeaveSceneGraphLib
             )
         else()
             message(WARNING "Wayland backend disabled; skipping WeaveTest build.")

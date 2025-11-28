@@ -2,6 +2,7 @@
 //
 
 #include "WeaveTests.h"
+#include "tests/TestEntryPoints.h"
 #ifdef _WIN32
 #include "weave/platform/win32/Win32Exceptions.h"
 #include "weave/platform/win32/Win32Window.h"
@@ -49,7 +50,6 @@
 #endif
 #include "weave/input/system/GamepadLayouts.h"
 
-#include "weave/system/math/VectorMath.h"
 #include "weave/system/time/Clock.h"
 
 #include <thread>
@@ -68,30 +68,14 @@
 #include <system_error>
 #include <array>
 #include <algorithm>
+#include <exception>
+#include <string_view>
 
-#include "weave/system/blender/Blender.h"
-#include "weave/particles/nodes/ArithmeticNodes.h"
-#include "weave/animation/blender/samplers/DataClipSampler.h"
-#include "weave/animation/blender/samplers/SignalSampler.h"
-
-#include "weave/particles/ParticleBuffer.h"
-#include "weave/particles/ParticleMachine.h"
-#include "weave/particles/nodes/ParticleNode.h"
-#include "weave/particles/nodes/ParticleEmitter.h"
-#include "weave/particles/nodes/CommitEmissionNode.h"
-
-#include "weave/system/math/Interpolation.h"
-#include "weave/scenegraph/SceneGraph.h"
 /*
 Port Anim to Blenders
 */
 
-using namespace weave;
-using namespace weave::blender;
-
 namespace {
-
-using weave::algebra::equivalent;
 
 std::array<float, 3> HslToRgb(float h, float s, float l) {
 	auto clamp01 = [](float v) { return std::clamp(v, 0.0f, 1.0f); };
@@ -154,549 +138,51 @@ struct BarVertex {
 	float color[3];
 };
 
-struct ParticleTestWriter : particles::ParticleNode<> {
-	ParticleTestWriter(float lifeValue, float maxLifeValue)
-		: lifeValue(lifeValue), maxLifeValue(maxLifeValue) {}
-
-	void ExecuteNode() override {
-		wroteCount = 0;
-		auto& context = GetContext();
-		for (auto* buffer : context.buffers) {
-			if (!buffer) {
-				continue;
-			}
-			for (auto&& [life, maxLife] : buffer->EmissionSpan<particles::layout::LifeTime, particles::layout::MaxLifeTime>()) {
-				life.lifeTime = lifeValue;
-				maxLife.maxLifeTime = maxLifeValue;
-				++wroteCount;
-			}
-		}
-	}
-
-	float lifeValue{};
-	float maxLifeValue{};
-	size_t wroteCount{};
-};
-
-struct ParticleTestInspector : particles::ParticleNode<> {
-	ParticleTestInspector(float lifeValue, float maxLifeValue)
-		: lifeValue(lifeValue), maxLifeValue(maxLifeValue) {}
-
-	void ExecuteNode() override {
-		verifiedCount = 0;
-		mismatchCount = 0;
-		auto& context = GetContext();
-		for (auto* buffer : context.buffers) {
-			if (!buffer) {
-				continue;
-			}
-			for (auto&& [life, maxLife] : buffer->EditableSpan<particles::layout::LifeTime, particles::layout::MaxLifeTime>()) {
-				const bool matches = std::abs(life.lifeTime - lifeValue) < 1e-5f
-					&& std::abs(maxLife.maxLifeTime - maxLifeValue) < 1e-5f;
-				if (matches) {
-					++verifiedCount;
-				} else {
-					++mismatchCount;
-				}
-			}
-		}
-	}
-
-	float lifeValue{};
-	float maxLifeValue{};
-	size_t verifiedCount{};
-	size_t mismatchCount{};
-};
-
 } // namespace
 
-struct MatrixNode : BlenderNode<In<float, float, int>, Out<weave::Matrix4x4>> {
-	void ExecuteNode() override {
-		output.Ref<weave::Matrix4x4>() = weave::Matrix4x4{};
-		output.Ref<weave::Matrix4x4>() = weave::Matrix4x4{} * input.Ref<0>() * input.Ref<1>();
-	}
-};
-
-struct SomeNode
-	: BlenderNode<Out<weave::Matrix4x4>, In<weave::Matrix4x4, weave::Matrix4x4, weave::Matrix3x3, float, bool>> {
-
-	void ExecuteNode() override {
-		if (input.Value<4>()) {
-			output = input.Value<0>() * input.Value<1>() * input.Value<3>();
-			output = input.Value<0>();
+bool RunAllTests() {
+	constexpr auto logFailures = [](std::string_view scope, const weave::tests::TestReport& report) {
+		for (auto const& failure : report.failures) {
+			std::cerr << "[" << scope << "] " << failure << '\n';
 		}
-	}
-};
+	};
 
-struct SomeExternalBool
-	: BlenderNode<Out<bool>> {
+	bool allPassed = true;
 
-	bool setMe = false;
-
-	void ExecuteNode() override {
-		output = setMe;
-	}
-};
-
-
-struct PrintFloats : BlenderNode<In<float, float>> {
-	void ExecuteNode() override {
-		std::cout << "Input 1: " << input.Value<0>() << std::endl;
-		std::cout << "Input 2: " << input.Value<1>() << std::endl;
-	}
-};
-
-struct MessageNode
-	: BlenderNode<> {
-	std::string message;
-
-	MessageNode(std::string msg) : message(msg) {}
-
-	void ExecuteNode() override {
-		std::cout << message << std::endl;
-	}
-};
-
-class SineWaveNode : public BlenderNode<Uniform<SamplingTime>, Out<float>> {
-public:
-	SineWaveNode(float frequency, float amplitude)
-		: frequency(frequency), amplitude(amplitude) {}
-
-	void ExecuteNode() override {
-		float time = uniform.Ref<SamplingTime>().globalTimeNow;
-		this->output.Ref<0>() = amplitude * std::sin(2.0f * 3.14159265f * frequency * time);
-	}
-
-private:
-	float frequency;
-	float amplitude;
-};
-
-struct AlwaysMessageNode
-	: BlenderNode<> {
-	std::string message;
-
-	AlwaysMessageNode(std::string msg) : message(msg) {}
-
-	void ExecuteNode() override {
-		//std::cout << message << " " << executionStamp << std::endl;
-		DisableCache();
-	}
-};
-
-using namespace weave::blender::data;
-
-DataClip CreateSampleData() {
-	DataClip dataClip;
-	dataClip.samplingRate = 24.0f;
-
-	// Channel 0: 2 seconds of a float sin wave
-	float sinWaveDuration = 2.0f;
-	float sinWaveFrequency = 1.0f; // Choose any frequency
-	size_t sinWaveSampleCount = static_cast<size_t>(sinWaveDuration * dataClip.samplingRate);
-	DataClip::Channel sinWaveChannel(DataType::Float, sizeof(float));
-	sinWaveChannel.sampleCount = sinWaveSampleCount;
-	sinWaveChannel.data.resize(sinWaveSampleCount * sizeof(float));
-
-	for (size_t i = 0; i < sinWaveSampleCount; ++i) {
-		float time = i / dataClip.samplingRate;
-		float sinValue = std::sin(2 * 3.14159f * sinWaveFrequency * time);
-		reinterpret_cast<float*>(sinWaveChannel.data.data())[i] = sinValue;
-	}
-	dataClip.channels.push_back(std::move(sinWaveChannel));
-
-	// Channel 1: 0.5 seconds of a float square wave
-	float squareWaveDuration = 0.5f;
-	float squareWaveFrequency = 2.0f; // Choose any frequency
-	size_t squareWaveSampleCount = static_cast<size_t>(squareWaveDuration * dataClip.samplingRate);
-	DataClip::Channel squareWaveChannel(DataType::Float, sizeof(float));
-	squareWaveChannel.sampleCount = squareWaveSampleCount;
-	squareWaveChannel.data.resize(squareWaveSampleCount * sizeof(float));
-
-	for (size_t i = 0; i < squareWaveSampleCount; ++i) {
-		float time = i / dataClip.samplingRate;
-		float squareValue = (std::sin(2 * 3.14159f * squareWaveFrequency * time) >= 0) ? 1.0f : -1.0f;
-		reinterpret_cast<float*>(squareWaveChannel.data.data())[i] = squareValue;
-	}
-	dataClip.channels.push_back(std::move(squareWaveChannel));
-
-	// Channel 2: 2 seconds of an integer sequence starting from 0 going up
-	float intSeqDuration = 2.0f;
-	size_t intSeqSampleCount = static_cast<size_t>(intSeqDuration * dataClip.samplingRate);
-	DataClip::Channel intSeqChannel(DataType::Int32, sizeof(int));
-	intSeqChannel.sampleCount = intSeqSampleCount;
-	intSeqChannel.data.resize(intSeqSampleCount * sizeof(int));
-
-	for (size_t i = 0; i < intSeqSampleCount; ++i) {
-		reinterpret_cast<int*>(intSeqChannel.data.data())[i] = static_cast<int>(i);
-	}
-	dataClip.channels.push_back(std::move(intSeqChannel));
-
-	dataClip.UpdateClipLength();
-
-	return dataClip;
-}
-
-std::shared_ptr<weave::blender::data::DataClip> CreateSingleChannelFloatDataClip() {
-#define M_PI 3.14159265358979323846
-	using namespace weave::blender::data;
-
-	// Calculate the number of samples required for 10 seconds at 30 fps
-	size_t sampleCount = static_cast<size_t>(10.0f * 30.0f);
-
-	// Create a DataClip with a single float channel
-	auto dataClip = std::make_shared<DataClip>();
-	dataClip->samplingRate = 30.0f;
-	dataClip->channels.emplace_back(weave::types::DataType::Float, sizeof(float));
-	dataClip->channels.back().sampleCount = sampleCount;
-
-	// Reserve memory for the samples
-	dataClip->channels.back().data.reserve(sampleCount * sizeof(float));
-
-	// Generate animated data for the channel
-	for (size_t i = 0; i < sampleCount; ++i) {
-		float t = static_cast<float>(i) / dataClip->samplingRate;
-		float value = (float) (std::sin(2.0f * M_PI * t) * std::cos(4.0f * M_PI * t));
-		dataClip->channels.back().data.insert(dataClip->channels.back().data.end(), reinterpret_cast<std::byte*>(&value), reinterpret_cast<std::byte*>(&value) + sizeof(float));
-	}
-
-	// Update the clip length
-	dataClip->UpdateClipLength();
-
-	return dataClip;
-}
-
-std::shared_ptr<weave::blender::data::DataClip> CreateDampedSineWaveClip(float duration, float dampingFactor) {
-	using namespace weave::blender::data;
-
-	// Calculate the number of samples based on the duration and 30 fps
-	size_t sampleCount = static_cast<size_t>(std::ceil(duration * 30.0f));
-
-	// Create a new DataClip with one float channel
-	auto clip = std::make_shared<DataClip>();
-	clip->channels.emplace_back(weave::types::DataType::Float, sizeof(float));
-	clip->channels.back().sampleCount = sampleCount;
-	clip->channels.back().data.resize(sampleCount * sizeof(float));
-	clip->samplingRate = 30.0f;
-	clip->UpdateClipLength();
-
-	// Generate the damped sine wave data
-	float timeStep = duration / sampleCount;
-	for (size_t i = 0; i < sampleCount; ++i) {
-		float t = i * timeStep;
-		float amplitude = std::exp(-dampingFactor * t);
-		float value = (float)(amplitude * std::sin(2.0f * M_PI * t));
-		reinterpret_cast<float*>(clip->channels[0].data.data())[i] = value;
-	}
-
-	return clip;
-}
-
-
-void TestNodes() {
-	{
-		// Create nodes
-		Blender blender;
-
-		auto constantFloat = blender.CreateNode<ConstNode<float>>(5.0f);
-		auto someMult = blender.CreateNode<MultiplyNode<float, float>>(2.0f, 2.0f);
-		auto someNode = blender.CreateNode<SomeNode>();
-		auto constantFloatInt = blender.CreateNode<ConstNode<float, int>>(10.0f, 20);
-		auto matrixNode = blender.CreateNode<MatrixNode>();
-		auto printFloats = blender.CreateNode<PrintFloats>();
-		auto someBool = blender.CreateNode<SomeExternalBool>();
-		someBool->setMe = true;
-
-		auto message = blender.CreateNode<MessageNode>("I'm a SomeMult Trigger...");
-
-		// Connect nodes
-		auto root = blender.CreateNode<MessageNode>("Start of the tree!");
-		root->ConnectTrigger(someMult);
-		root->ConnectTrigger(blender.CreateNode<MessageNode>("Second node"));
-
-		someMult->ConnectInputTo(0, constantFloat, 0);
-		someMult->ConnectTrigger(message);
-		someMult->ConnectTrigger(someNode);
-		someMult->ConnectTrigger(printFloats);
-
-		someNode->ConnectInputTo(0, constantFloat, 0);
-		someNode->ConnectInputTo(0, constantFloat, 1);
-		someNode->ConnectInputTo(0, constantFloatInt, 3);
-		someNode->ConnectInputTo(0, someBool, 4);
-		someNode->ConnectInputTo(0, matrixNode, 1);
-
-		matrixNode->ConnectInputTo(0, someNode, 0);
-		printFloats->ConnectInputTo(0, someMult, 0);
-		printFloats->ConnectInputTo(0, constantFloat, 1);
-
-		blender.RegisterNodeName(constantFloat, "Constant Float");
-		blender.RegisterOutputName(constantFloat, 0, "Float");
-
-		blender.RegisterNodeName(printFloats, "Print Floats");
-		blender.RegisterInputName(printFloats, 0, "Float 0");
-		blender.RegisterInputName(printFloats, 1, "Float 1");
-
-
-		Connection con;
-		con.fromOutputNode = "Constant Float";
-		con.outputIndex = 0ull;
-		con.toInputNode = printFloats;
-		con.inputIndex = 0ull;
-
-		blender.Connect(con);
-
-		auto outptr = blender.ExposeOutput<0>(someMult, "X");
-
-		// Set root node and execute
-		blender.AddRootTrigger(root);
-		blender.Execute();
-
-		std::cout << std::format("\nOutPtr says: {}", *outptr);
-
-		auto inTypes = printFloats->GetInputTypes();
-		for (auto t : inTypes) {
-			std::cout << std::format("\n{}", t.name());
+	try {
+		auto blenderReport = weave::tests::blender::TestNodes();
+		if (!blenderReport) {
+			logFailures("blender", blenderReport);
+			allPassed = false;
 		}
+	} catch (const std::exception& ex) {
+		std::cerr << "[blender] Unhandled exception: " << ex.what() << '\n';
+		allPassed = false;
+	} catch (...) {
+		std::cerr << "[blender] Unhandled unknown exception.\n";
+		allPassed = false;
 	}
 
-	{
-		Blender blender;
-
-		NodeIoNames constNodeNames;
-		constNodeNames.outputNames = { { "value", 0 } };
-
-		NodeIoNames addNodeNames;
-		addNodeNames.inputNames = { {"a", 0}, {"b", 1} };
-		addNodeNames.outputNames = { { "sum", 0 } };
-
-		NodeIoNames multiplyNodeNames;
-		multiplyNodeNames.inputNames = { {"a", 0}, {"b", 1} };
-		multiplyNodeNames.outputNames = { { "product", 0 } };
-
-		NodeIoNames subtractNodeNames;
-		subtractNodeNames.inputNames = { {"a", 0}, {"b", 1} };
-		subtractNodeNames.outputNames = { { "difference", 0 } };
-
-		// Creating nodes
-		[[maybe_unused]] ConstNode<float>* const1 = blender.CreateNamedNode<ConstNode<float>>({ "const1", constNodeNames}, 2.0f);
-		[[maybe_unused]] ConstNode<float>* const2 = blender.CreateNamedNode<ConstNode<float>>({ "const2", constNodeNames}, 3.0f);
-		[[maybe_unused]] ConstNode<float>* const3 = blender.CreateNamedNode<ConstNode<float>>({ "const3", constNodeNames}, 4.0f);
-		[[maybe_unused]] AddNode<float, float>* addNode = blender.CreateNamedNode<AddNode<float, float>>({ "addNode", addNodeNames });
-		[[maybe_unused]] MultiplyNode<float, float>* multiplyNode = blender.CreateNamedNode<MultiplyNode<float, float>>({ "multiplyNode", multiplyNodeNames });
-		[[maybe_unused]] SubtractNode<float, float>* subtractNode = blender.CreateNamedNode<SubtractNode<float, float>>({ "subtractNode", subtractNodeNames });
-		// Connecting nodes
-		blender.Connect({ "const1", "value", "addNode", "a" });
-		blender.Connect({ "const2", "value", "addNode", "b" });
-		blender.Connect({ "addNode", "sum", "multiplyNode", "a" });
-		blender.Connect({ "const3", "value", "multiplyNode", "b" });
-		blender.Connect({ "multiplyNode", "product", "subtractNode", "a" });
-		blender.Connect({ "const1", "value", "subtractNode", "b" });
-
-		// Setting the root node
-		blender.AddRootTrigger(subtractNode);
-
-		// Executing the graph
-		blender.Execute();
-
-		// Printing the result
-		std::cout << "Result: " << subtractNode->output.Ref<0>() << std::endl;
-
-		Uniform<int, float> u{ blender.GetUniforms<int, float>() };
-		u.Set(int(100));
-
+	auto particleBufferReport = weave::tests::particles::TestParticleBuffer();
+	if (!particleBufferReport) {
+		logFailures("particles.buffer", particleBufferReport);
+		allPassed = false;
 	}
 
-	{
-		Blender blender;
-
-		auto time = blender.GetUniform<weave::blender::SamplingTime>();
-
-		//std::shared_ptr<DataClip> data = std::make_shared<DataClip>();
-		//*data = CreateSampleData();
-
-		auto data = CreateSingleChannelFloatDataClip();
-		//auto data = CreateDampedSineWaveClip(10.0f, 1.1f);
-		auto* sampler = blender.CreateNode<DataClipSampler<float, float, int32_t>>(data, 0.0f);
-		//auto* sampler2 = blender.CreateNode<DataClipSampler<float>>(CreateDampedSineWaveClip(10.0f, 0.1f), 0.0f);
-		auto* signal = blender.CreateNode<SignalSampler>(weave::easing::expInOut, 0.0f, 1.0f, 1.0f, 0.0f, true);
-
-		auto* add = blender.CreateNode<AddNode<float, float>>(1.0f, 1.0f);
-		add->ConnectInputTo<0,0>(signal);
-		add->ConnectInputTo<1,0>(sampler);
-
-		time->globalTimeStart = 0.0f;
-		time->globalTimeNow = 0.0f;
-		time->delta = 0.1f;
-
-		blender.AddRootTrigger(sampler);
-
-		std::shared_ptr<float> scaleControl = std::make_shared<float>(2.0f);
-		sampler->ConnectInputTo<0>(scaleControl);
-		//sampler->ConnectInputTo(0, sampler2, 0);
-		sampler->ConnectTrigger(add);
-
-
-		// Sine wave nodes with different frequencies and amplitudes
-		auto sineWave1 = blender.CreateNode<SineWaveNode>(1.0f, 0.5f);
-		auto sineWave2 = blender.CreateNode<SineWaveNode>(0.25f, 1.0f);
-
-		// Smoothstep node to blend between the sine waves
-		auto smoothstep = blender.CreateNode<SmoothstepNode<float>>();
-		smoothstep->ConnectInputTo<0, 0>(sineWave1);
-		smoothstep->ConnectInputTo<1, 0>(sineWave2);
-		smoothstep->ConnectInputTo<2, 0>(add);
-
-		//smoothstep->input.SetDefaultValue<2>(0.3f); // Blending factor
-
-		sampler->ConnectTrigger(smoothstep);
-
-		auto always = blender.CreateNode<AlwaysMessageNode>("Hello!\n");
-		blender.AddRootTrigger(always);
-		sampler->ConnectTrigger(always);
-
-		//constexpr auto v = weave::is_specialization_of_v<BlenderNode, AlwaysMessageNode>;
-
-		[[maybe_unused]]auto out0 = blender.ExposeOutput<0>(sampler, "SamplerOutput0");
-		[[maybe_unused]]auto out1 = blender.ExposeOutput<0>(sampler, "SamplerOutput1");
-		[[maybe_unused]]auto out2 = blender.ExposeOutput<0>(sampler, "SamplerOutput2");
-
-		auto smoothOut = blender.ExposeOutput<0>(smoothstep, "SmoothOutput");
-
-		for (int i = 0, t = 10; i < t; ++i) {
-			blender.Execute();
-			auto a = sampler->output.Ref<0>();
-			auto b = sampler->output.Ref<1>();
-			auto c = sampler->output.Ref<2>();
-
-			auto d = signal->output.Ref<0>();
-
-			auto e = add->output.Ref<0>();
-
-			auto f = *smoothOut;//smoothstep->output.Ref<0>();
-
-			auto drawValue = [&](auto v) {
-				int xmov = int(10.0f * v) + 10;
-
-				for (int j = 0; j < xmov; ++j) {
-					std::cout << " ";
-				}
-
-				std::cout << "*\n";
-			};
-
-			drawValue(f);
-
-			(void)a;
-			(void)b;
-			(void)c;
-			(void)d;
-			(void)e;
-			(void)f;
-			std::this_thread::sleep_for(std::chrono::milliseconds(50));
-
-			time->globalTimeNow += 1.0f / 24.f;
-
-			*scaleControl -= .01f;
-		}
-
-
+	auto particleMachineReport = weave::tests::particles::RunParticleMachineSelfTest();
+	if (!particleMachineReport) {
+		logFailures("particles.machine", particleMachineReport);
+		allPassed = false;
 	}
+
+	auto sceneGraphReport = weave::tests::scenegraph::RunSceneGraphSelfTest();
+	if (!sceneGraphReport) {
+		logFailures("scenegraph", sceneGraphReport);
+		allPassed = false;
+	}
+
+	return allPassed;
 }
-
-
-int TestParticleBuffer() {
-	using namespace weave::particles;
-
-	struct TestFieldA { std::byte value; };
-	struct TestFieldB { std::byte value; };
-	static_assert(sizeof(TestFieldA) == 1);
-	static_assert(sizeof(TestFieldB) == 1);
-
-	ParticleLayout layout;
-	layout.particleByteSize = sizeof(TestFieldA) + sizeof(TestFieldB);
-	layout.SetOffset<TestFieldA>(0);
-	layout.SetOffset<TestFieldB>(sizeof(TestFieldA));
-
-	ParticleBuffer buffer(0, layout);
-
-	// Add 10 particles to the emission buffer
-	buffer.AddEmissionParticles(10);
-
-	// Publish the emitted particles to the editable buffer
-	buffer.CommitEmittedParticles();
-
-	// Check if the buffer size is correct
-	assert(buffer.GetBufferByteSize() == 10 * layout.particleByteSize);
-
-	// Access the editable buffer as a particle_span
-	auto editableBuffer = buffer.EditableSpan<TestFieldA, TestFieldB>();
-
-	// Iterate through the particles in the editable buffer and set their values
-	size_t index = 0;
-	for (auto&& [fieldA, fieldB] : editableBuffer) {
-		fieldA.value = static_cast<std::byte>(index);
-		fieldB.value = static_cast<std::byte>(index + 1);
-		++index;
-	}
-
-	// Verify the data in the editable buffer
-	index = 0;
-	for (auto&& [fieldA, fieldB] : editableBuffer) {
-		assert(std::to_integer<int>(fieldA.value) == static_cast<int>(index));
-		assert(std::to_integer<int>(fieldB.value) == static_cast<int>(index + 1));
-		++index;
-	}
-
-	// Kill 3 particles starting from the 2nd particle
-	buffer.KillParticles(1, 3);
-
-	// Verify the data in the editable buffer after killing particles
-	auto newEditableBuffer = buffer.EditableSpan<TestFieldA, TestFieldB>();
-	assert(newEditableBuffer.size() == 7);
-
-	// Verify offsetted span access using explicit offsets
-	auto offsets = buffer.GetLayout().GetOffsets<TestFieldA, TestFieldB>();
-	auto skippedEditable = buffer.EditableSpan<TestFieldA, TestFieldB>(1, offsets);
-	assert(skippedEditable.size() == newEditableBuffer.size() - 1);
-	auto firstSkipped = skippedEditable[0];
-	auto referenceTuple = newEditableBuffer[1];
-	assert(std::to_integer<int>(std::get<0>(firstSkipped).value) ==
-		std::to_integer<int>(std::get<0>(referenceTuple).value));
-	assert(std::to_integer<int>(std::get<1>(firstSkipped).value) ==
-		std::to_integer<int>(std::get<1>(referenceTuple).value));
-
-	// Emit two more particles using the variadic AddEmissionParticles helper
-	auto emissionView = buffer.AddEmissionParticles<TestFieldA, TestFieldB>(2);
-	assert(emissionView.size() == 2);
-	int emissionIndex = 0;
-	for (auto&& [fieldA, fieldB] : emissionView) {
-		fieldA.value = static_cast<std::byte>(10 + emissionIndex);
-		fieldB.value = static_cast<std::byte>(20 + emissionIndex);
-		++emissionIndex;
-	}
-
-	// Ensure EmissionSpan reports the pending particles
-	auto pendingEmission = buffer.EmissionSpan<TestFieldA, TestFieldB>();
-	assert(pendingEmission.size() == 2);
-
-	// Commit and verify editable particles now include the emitted ones
-	buffer.CommitEmittedParticles();
-	auto committedEditable = buffer.EditableSpan<TestFieldA, TestFieldB>();
-	assert(committedEditable.size() == 9);
-	assert(std::to_integer<int>(std::get<0>(committedEditable[8]).value) == 10);
-	assert(std::to_integer<int>(std::get<1>(committedEditable[8]).value) == 20);
-
-	// Active span exposes a const view over the editable bytes
-	auto activeSpan = buffer.ActiveSpan();
-	assert(activeSpan.size() == committedEditable.size());
-	auto [firstByte] = activeSpan[0];
-	assert(firstByte == std::get<0>(committedEditable[0]).value);
-
-	
-	std::cout << "All tests passed!" << std::endl;
-	return 0;
-}
-
 
 class MyInputLogger : public weave::input::InputProcessor {
 private:
@@ -1047,9 +533,6 @@ void main() {
     weave::time::Clock clock1, clock2;
     clock2.SetTickRateHz(10.0);
 
-    TestParticleBuffer();
-    TestNodes();
-
 	auto& inputEffectState = GetInputEffectSharedState();
 	std::array<float, InputEffectSharedState::kBarCount> barVisualLevels{};
     while (!exitRequested.load()) {
@@ -1157,146 +640,6 @@ void main() {
 
         swapBuffers();
     }
-}
-
-bool RunSceneGraphSelfTest() {
-	using weave::scenegraph::SceneGraph;
-
-	SceneGraph graph;
-
-	auto rootChildIndex = graph.CreateNode("root_child");
-	[[maybe_unused]] auto branchIndex = graph.CreateNode("branch", rootChildIndex);
-	auto leafIndex = graph.CreateNode("leaf", "branch");
-
-	if (graph.FindNode("leaf") != leafIndex) {
-		return false;
-	}
-
-	const bool touchedRootChild = graph.TouchNode(rootChildIndex, [](Transform &transform) {
-		transform.Translate(1.0f, 0.0f, 0.0f);
-	});
-	const bool touchedBranch = graph.TouchNode("branch", [](Transform &transform) {
-		transform.Translate(0.0f, 2.0f, 0.0f);
-	});
-	const bool touchedLeaf = graph.TouchNode(leafIndex, [](Transform &transform) {
-		transform.Translate(0.0f, 0.0f, 3.0f);
-	});
-
-	if (!(touchedRootChild && touchedBranch && touchedLeaf)) {
-		return false;
-	}
-
-	graph.UpdateWorldTransforms();
-
-	Vector3 rootChildWorld{};
-	Vector3 branchWorld{};
-	Vector3 leafWorld{};
-	bool rootChildSeen = false;
-	bool branchSeen = false;
-	bool leafSeen = false;
-
-	graph.Traverse([&](SceneGraph::NodeIndex, SceneGraph::Node const &node) {
-		if (node.name.empty()) {
-			return;
-		}
-
-		Vector3 position(node.worldTransform.W.x, node.worldTransform.W.y, node.worldTransform.W.z);
-		if (node.name == "root_child") {
-			rootChildWorld = position;
-			rootChildSeen = true;
-		} else if (node.name == "branch") {
-			branchWorld = position;
-			branchSeen = true;
-		} else if (node.name == "leaf") {
-			leafWorld = position;
-			leafSeen = true;
-		}
-	});
-
-	const bool transformsOk = rootChildSeen && branchSeen && leafSeen
-		&& equivalent(rootChildWorld, Vector3(1.0f, 0.0f, 0.0f))
-		&& equivalent(branchWorld, Vector3(1.0f, 2.0f, 0.0f))
-		&& equivalent(leafWorld, Vector3(1.0f, 2.0f, 3.0f));
-
-	const bool removeLeafByIndex = graph.RemoveNode(leafIndex);
-	const bool lookupAfterLeafRemoval = graph.FindNode("leaf") == SceneGraph::Node::kInvalidIndex;
-
-	auto reusedLeafIndex = graph.CreateNode("reused_leaf", "branch");
-	const bool reusedSlot = reusedLeafIndex == leafIndex;
-
-	const bool removeReusedByName = graph.RemoveNode("reused_leaf");
-	const bool removeBranchByName = graph.RemoveNode("branch");
-	const bool branchMissing = graph.FindNode("branch") == SceneGraph::Node::kInvalidIndex;
-	const bool missingNodeLookup = graph.FindNode("missing") == SceneGraph::Node::kInvalidIndex;
-
-	const bool removeRootFails = !graph.RemoveNode(0);
-	const bool touchInvalidIndex = !graph.TouchNode(SceneGraph::Node::kInvalidIndex, [](Transform &transform) {
-		transform.Translate(42.0f, 0.0f, 0.0f);
-	});
-	const bool touchMissingName = !graph.TouchNode("missing_name", [](Transform &transform) {
-		transform.Translate(0.0f, 42.0f, 0.0f);
-	});
-
-	graph.Reset();
-	const bool resetClearsNames = graph.FindNode("root_child") == SceneGraph::Node::kInvalidIndex
-		&& graph.FindNode("branch") == SceneGraph::Node::kInvalidIndex;
-	const auto postResetIndex = graph.CreateNode("post_reset");
-	const bool resetAllowsCreate = postResetIndex != SceneGraph::Node::kInvalidIndex;
-
-	return transformsOk
-		&& removeLeafByIndex
-		&& lookupAfterLeafRemoval
-		&& reusedSlot
-		&& removeReusedByName
-		&& removeBranchByName
-		&& branchMissing
-		&& missingNodeLookup
-		&& removeRootFails
-		&& touchInvalidIndex
-		&& touchMissingName
-		&& resetClearsNames
-		&& resetAllowsCreate;
-}
-
-bool RunParticleMachineSelfTest() {
-	using namespace weave::particles;
-
-	constexpr uint64_t kParticlesToEmit = 4;
-	constexpr float kLifeValue = 0.5f;
-	constexpr float kMaxLifeValue = 5.0f;
-
-	ParticleMachine machine;
-	ParticleBuffer buffer(0, ParticleLayout::BuildStdParticleLayout());
-	machine.AddBuffer(buffer);
-	machine.SetSamplingData(1.0f, 1, true);
-
-	auto emitter = machine.Graph().CreateNode<ParticleEmitter>();
-	emitter->input.SetDefaultValue<ParticleEmitter::MinEmit>(static_cast<float>(kParticlesToEmit));
-	emitter->input.SetDefaultValue<ParticleEmitter::MaxEmit>(static_cast<float>(kParticlesToEmit));
-	emitter->input.SetDefaultValue<ParticleEmitter::Rate>(1.0f);
-	emitter->input.SetDefaultValue<ParticleEmitter::MinFrequency>(0.0f);
-	emitter->input.SetDefaultValue<ParticleEmitter::MaxFrequency>(0.0f);
-	emitter->input.SetDefaultValue<ParticleEmitter::MaxRuntime>(-1.0);
-	emitter->input.SetDefaultValue<ParticleEmitter::MaxParticles>(kParticlesToEmit);
-
-	auto writer = machine.Graph().CreateNode<ParticleTestWriter>(kLifeValue, kMaxLifeValue);
-	auto commit = machine.Graph().CreateNode<particles::CommitEmissionNode>();
-	auto inspector = machine.Graph().CreateNode<ParticleTestInspector>(kLifeValue, kMaxLifeValue);
-
-	machine.Graph().AddRootTrigger(emitter);
-	emitter->ConnectTrigger(writer);
-	writer->ConnectTrigger(commit);
-	commit->ConnectTrigger(inspector);
-
-	machine.Execute();
-
-	auto editableSpan = buffer.EditableSpan<particles::layout::LifeTime, particles::layout::MaxLifeTime>();
-	const size_t editableCount = editableSpan.size();
-
-	return writer->wroteCount == kParticlesToEmit
-		&& inspector->verifiedCount == kParticlesToEmit
-		&& inspector->mismatchCount == 0
-		&& editableCount == kParticlesToEmit;
 }
 
 #ifdef _WIN32
@@ -1622,13 +965,7 @@ int RunWaylandHarness()
 
 int main()
 {
-	if (!RunSceneGraphSelfTest()) {
-		std::cerr << "Scene graph self-test failed.\n";
-		return -1;
-	}
-
-	if (!RunParticleMachineSelfTest()) {
-		std::cerr << "Particle machine self-test failed.\n";
+	if (!RunAllTests()) {
 		return -1;
 	}
 #ifdef _WIN32
