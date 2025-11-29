@@ -14,3 +14,13 @@ TestReport RunParticleMachineSelfTest();
 namespace weave::tests::scenegraph {
 TestReport RunSceneGraphSelfTest();
 }
+
+namespace weave::tests::graphics::core {
+TestReport TestImageData();
+TestReport TestImageLoader();
+TestReport TestMeshBuilder();
+TestReport TestMeshData();
+TestReport TestMeshLayout();
+TestReport TestMeshLoader();
+TestReport TestPrimitives3D();
+}

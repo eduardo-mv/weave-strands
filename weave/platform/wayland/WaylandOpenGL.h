@@ -2,8 +2,8 @@
 
 #include "WaylandWindow.h"
 
-#include "weave/platform/graphics/gl/ContextPool.h"
-#include "weave/platform/graphics/gl/gl46.h"
+#include "weave/graphics/gl/context/ContextPool.h"
+#include "weave/graphics/gl/gl46.h"
 
 #include <EGL/egl.h>
 #include <EGL/eglext.h>
@@ -69,4 +69,3 @@ private:
 };
 
 } // namespace weave::wayland
-

@@ -20,7 +20,7 @@ Image data holder with support for multiple layers and mipmaps
 #include <cstddef>
 #include <vector>
 #include <span>
-#include "vulkan/vk_format.h"
+#include "weave/graphics/vulkan/vk_format.h"
 
 namespace weave::graphics {
 	class ImageLoader;

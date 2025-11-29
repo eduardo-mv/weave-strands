@@ -18,8 +18,8 @@ Win32 window creation helper with OpenGL 3.0+ support with multiple shared conte
 #include <vector>
 #include <cstdint>
 
-#include "weave/platform/graphics/gl/gl46.h"
-#include "weave/platform/graphics/gl/ContextPool.h"
+#include "weave/graphics/gl/gl46.h"
+#include "weave/graphics/gl/context/ContextPool.h"
 
 namespace weave {
 namespace win32 {

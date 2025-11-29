@@ -2,20 +2,7 @@ set(target_name WeavePlatformLib)
 
 add_library(${target_name} STATIC)
 
-file(GLOB weave_platform_graphics_sources CONFIGURE_DEPENDS
-    "${CMAKE_CURRENT_SOURCE_DIR}/graphics/*.cpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/graphics/*.h"
-    "${CMAKE_CURRENT_SOURCE_DIR}/graphics/gl/*.cpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/graphics/gl/*.h"
-    "${CMAKE_CURRENT_SOURCE_DIR}/graphics/vulkan/*.cpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/graphics/vulkan/*.h"
-)
-
-set(weave_platform_sources ${weave_platform_graphics_sources})
-
-if(NOT WIN32)
-    list(FILTER weave_platform_sources EXCLUDE REGEX "glad_wgl\\.cpp$")
-endif()
+set(weave_platform_sources)
 
 if(WIN32)
     file(GLOB weave_platform_win32_sources CONFIGURE_DEPENDS
@@ -61,3 +48,5 @@ endif()
 target_sources(${target_name} PRIVATE ${weave_platform_sources})
 
 weave_apply_default_settings(${target_name})
+
+target_link_libraries(${target_name} PUBLIC WeaveGraphicsLib)

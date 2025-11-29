@@ -35,6 +35,7 @@ function(weave_apply_default_settings target_name)
 endfunction()
 
 add_subdirectory(weave/system)
+add_subdirectory(weave/graphics)
 add_subdirectory(weave/platform)
 add_subdirectory(weave/animation)
 add_subdirectory(weave/input)
@@ -48,6 +49,13 @@ set(WEAVE_TEST_SOURCES
     tests/particles/ParticleBufferTests.cpp
     tests/particles/ParticleMachineTests.cpp
     tests/scenegraph/SceneGraphTests.cpp
+    tests/graphics/core/ImageDataTests.cpp
+    tests/graphics/core/ImageLoaderTests.cpp
+    tests/graphics/core/MeshBuilderTests.cpp
+    tests/graphics/core/MeshDataTests.cpp
+    tests/graphics/core/MeshLayoutTests.cpp
+    tests/graphics/core/MeshLoaderTests.cpp
+    tests/graphics/core/Primitives3DTests.cpp
 )
 if(WEAVE_BUILD_DEMO)
     if(WIN32)
@@ -58,6 +66,7 @@ if(WEAVE_BUILD_DEMO)
         weave_apply_default_settings(WeaveTest)
         target_link_libraries(WeaveTest PRIVATE
             WeaveSystemLib
+            WeaveGraphicsLib
             WeavePlatformLib
             WeaveAnimationLib
             WeaveInputLib
@@ -74,6 +83,7 @@ if(WEAVE_BUILD_DEMO)
             weave_apply_default_settings(WeaveTest)
             target_link_libraries(WeaveTest PRIVATE
                 WeaveSystemLib
+                WeaveGraphicsLib
                 WeavePlatformLib
                 WeaveAnimationLib
                 WeaveInputLib

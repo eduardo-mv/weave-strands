@@ -5,7 +5,7 @@ GL based interface for buffer objects.
 */
 #pragma once
 
-#include "gl46.h"
+#include "weave/graphics/gl/gl46.h"
 #include <cstddef>
 
 namespace weave::opengl {

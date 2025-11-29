@@ -13,21 +13,22 @@
 #include "weave/platform/wayland/WaylandOpenGL.h"
 #endif
 
-#include "weave/platform/graphics/ImageData.h"
-#include "weave/platform/graphics/ImageLoader.h"
-#include "weave/platform/graphics/MeshData.h"
-#include "weave/platform/graphics/MeshLoader.h"
-#include "weave/platform/graphics/Primitives3D.h"
+#include "weave/graphics/core/ImageData.h"
+#include "weave/graphics/core/ImageLoader.h"
+#include "weave/graphics/core/MeshData.h"
+#include "weave/graphics/core/MeshBuilder.h"
+#include "weave/graphics/core/MeshLoader.h"
+#include "weave/graphics/core/Primitives3D.h"
 
-#include "weave/platform/graphics/gl/ApiHelpers.h"
-#include "weave/platform/graphics/gl/Framebuffer.h"
-#include "weave/platform/graphics/gl/Texture.h"
-#include "weave/platform/graphics/gl/TextureLoader.h"
-#include "weave/platform/graphics/gl/Shader.h"
-#include "weave/platform/graphics/gl/ShaderLoader.h"
-#include "weave/platform/graphics/gl/Mesh.h"
-#include "weave/platform/graphics/gl/MeshUploader.h"
-#include "weave/platform/graphics/gl/Buffer.h"
+#include "weave/graphics/gl/resources/ApiHelpers.h"
+#include "weave/graphics/gl/resources/Framebuffer.h"
+#include "weave/graphics/gl/resources/Texture.h"
+#include "weave/graphics/gl/resources/TextureLoader.h"
+#include "weave/graphics/gl/resources/Shader.h"
+#include "weave/graphics/gl/resources/ShaderLoader.h"
+#include "weave/graphics/gl/resources/Mesh.h"
+#include "weave/graphics/gl/resources/MeshUploader.h"
+#include "weave/graphics/gl/resources/Buffer.h"
 
 
 
@@ -178,6 +179,48 @@ bool RunAllTests() {
 	auto sceneGraphReport = weave::tests::scenegraph::RunSceneGraphSelfTest();
 	if (!sceneGraphReport) {
 		logFailures("scenegraph", sceneGraphReport);
+		allPassed = false;
+	}
+
+	auto imageDataReport = weave::tests::graphics::core::TestImageData();
+	if (!imageDataReport) {
+		logFailures("graphics.core.image_data", imageDataReport);
+		allPassed = false;
+	}
+
+	auto imageLoaderReport = weave::tests::graphics::core::TestImageLoader();
+	if (!imageLoaderReport) {
+		logFailures("graphics.core.image_loader", imageLoaderReport);
+		allPassed = false;
+	}
+
+	auto meshBuilderReport = weave::tests::graphics::core::TestMeshBuilder();
+	if (!meshBuilderReport) {
+		logFailures("graphics.core.mesh_builder", meshBuilderReport);
+		allPassed = false;
+	}
+
+	auto meshDataReport = weave::tests::graphics::core::TestMeshData();
+	if (!meshDataReport) {
+		logFailures("graphics.core.mesh_data", meshDataReport);
+		allPassed = false;
+	}
+
+	auto meshLayoutReport = weave::tests::graphics::core::TestMeshLayout();
+	if (!meshLayoutReport) {
+		logFailures("graphics.core.mesh_layout", meshLayoutReport);
+		allPassed = false;
+	}
+
+	auto meshLoaderReport = weave::tests::graphics::core::TestMeshLoader();
+	if (!meshLoaderReport) {
+		logFailures("graphics.core.mesh_loader", meshLoaderReport);
+		allPassed = false;
+	}
+
+	auto primitivesReport = weave::tests::graphics::core::TestPrimitives3D();
+	if (!primitivesReport) {
+		logFailures("graphics.core.primitives", primitivesReport);
 		allPassed = false;
 	}
 
