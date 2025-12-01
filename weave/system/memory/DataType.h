@@ -6,6 +6,7 @@ Enum class and support functions to define common data types in a portable manne
 
 #include <typeinfo>
 #include <typeindex>
+#include <type_traits>
 #include <string>
 #include <array>
 #include <cstdint>
@@ -708,12 +709,51 @@ namespace weave::types {
 		}
 	}
 
+	template<typename T>
+	RuntimeTypeTraits const& GetRuntimeTypeTraitsForType() {
+		using Traits = TypeTraits<T>;
+		static_assert(Traits::dataTypeValue != DataType::Void || std::is_void_v<T>,
+			"TypeTraits specialization required for this type");
+		return GetRuntimeTypeTraits(Traits::dataTypeValue);
+	}
 
+	void DynamicTypeConvert(std::byte* dataOutBytes, DataType dataOutType, std::byte const* dataInBytes, DataType dataInType);
 
+	void DynamicTypeConvert(std::byte* dataOutBytes, RuntimeTypeTraits const& dataOutTypeTraits, std::byte const* dataInBytes, RuntimeTypeTraits const& dataInTypeTraits);
 
-template<typename OutType>
-struct DynamicTypeConvert {
-	static void Convert(OutType& sample, std::byte const* sampleBytes, RuntimeTypeTraits const& dataTypeTraits) {
+	template<typename InType>
+	void DynamicTypeConvert(InType const& inValue, std::byte* dataOutBytes, DataType dataOutType) {
+		DynamicTypeConvert(dataOutBytes, GetRuntimeTypeTraits(dataOutType),
+			reinterpret_cast<std::byte const*>(&inValue), GetRuntimeTypeTraitsForType<InType>());
+	}
+
+	template<typename InType>
+	void DynamicTypeConvert(InType const& inValue, std::byte* dataOutBytes, RuntimeTypeTraits const& dataOutTypeTraits) {
+		DynamicTypeConvert(dataOutBytes, dataOutTypeTraits,
+			reinterpret_cast<std::byte const*>(&inValue), GetRuntimeTypeTraitsForType<InType>());
+	}
+
+	template<typename OutType>
+	OutType DynamicTypeConvert(std::byte const* dataInBytes, DataType dataInType) {
+		return DynamicTypeConvert<OutType>(dataInBytes, GetRuntimeTypeTraits(dataInType));
+	}
+
+	template<typename OutType>
+	OutType DynamicTypeConvert(std::byte const* dataInBytes, RuntimeTypeTraits const& dataInTraits) {
+		OutType outValue{};
+		DynamicTypeConvert(reinterpret_cast<std::byte*>(&outValue), GetRuntimeTypeTraitsForType<OutType>(), dataInBytes, dataInTraits);
+		return outValue;
+	}
+
+	template<typename OutType, typename InType>
+	OutType DynamicTypeConvert(InType const& dataIn) {
+		return DynamicTypeConvert<OutType>(reinterpret_cast<std::byte const*>(&dataIn),
+			GetRuntimeTypeTraitsForType<InType>());
+	}
+
+	/*
+	template<typename OutType>
+	void DynamicTypeConvert(OutType& sample, std::byte const* sampleBytes, RuntimeTypeTraits const& dataTypeTraits) {
 		using SampleTraits = TypeTraits<OutType>;
 
 		if (typeid(OutType) == dataTypeTraits.type_index) {
@@ -773,7 +813,6 @@ struct DynamicTypeConvert {
 			}
 		}
 	}
-};
+*/
 
 };
-

@@ -21,6 +21,9 @@ The stream abstraction enables exploiting similar mechanisms found in gfx APIs l
 #include "weave/system/memory/DataType.h"
 #include <vector>
 #include <span>
+#include <cstddef>
+#include <iterator>
+#include <type_traits>
 
 namespace weave::graphics {
 	
@@ -77,9 +80,9 @@ struct MeshBufferView {
 	MeshBuffer buffer; //Buffer which the view refers to
 
 	//Gets a pointer to the data
-	template<typename T = void>
-	T* Memory() const {
-		return buffer.Memory<T>(byteOffset);
+	template<typename T = std::byte>
+	T* Memory(uint64_t offset = 0) const {
+		return buffer.Memory<T>(byteOffset + offset);
 	}
 
 	bool operator==(MeshBufferView const& other) const {
@@ -88,6 +91,70 @@ struct MeshBufferView {
 			byteSize == other.byteSize &&
 			buffer == other.buffer;
 	};
+
+	template<typename BytePtr>
+	struct StridedIterator {
+		using iterator_category = std::forward_iterator_tag;
+		using value_type = BytePtr;
+		using difference_type = std::ptrdiff_t;
+		using pointer = BytePtr;
+		using reference = BytePtr;
+
+		BytePtr current{};
+		BytePtr end{};
+		size_t stride = 1;
+
+		StridedIterator() = default;
+		StridedIterator(BytePtr start, BytePtr finish, size_t step)
+			: current(start)
+			, end(finish)
+			, stride(step ? step : 1) {}
+
+		reference operator*() const { return current; }
+
+		StridedIterator& operator++() {
+			if (current < end) {
+				const auto next = current + stride;
+				current = next < end ? next : end;
+			}
+			return *this;
+		}
+
+		friend bool operator==(StridedIterator const& a, StridedIterator const& b) {
+			return a.current == b.current;
+		}
+
+		friend bool operator!=(StridedIterator const& a, StridedIterator const& b) {
+			return !(a == b);
+		}
+	};
+
+	using iterator = StridedIterator<std::byte*>;
+	using const_iterator = StridedIterator<std::byte const*>;
+
+	iterator begin() { return BeginStrided(0, 1); }
+	iterator end() { return EndStrided(1); }
+	const_iterator begin() const { return BeginStrided(0, 1); }
+	const_iterator end() const { return EndStrided(1); }
+
+	iterator BeginStrided(uint64_t offset, uint32_t stride) {
+		auto start = buffer.Memory<std::byte>(byteOffset + offset);
+		auto finish = buffer.Memory<std::byte>(byteOffset + byteSize);
+		return iterator{ start, finish, stride };
+	}
+	iterator EndStrided(uint32_t stride) {
+		auto finish = buffer.Memory<std::byte>(byteOffset + byteSize);
+		return iterator{ finish, finish, stride };
+	}
+	const_iterator BeginStrided(uint64_t offset, uint32_t stride) const {
+		auto start = buffer.Memory<std::byte const>(byteOffset + offset);
+		auto finish = buffer.Memory<std::byte const>(byteOffset + byteSize);
+		return const_iterator{ start, finish, stride };
+	}
+	const_iterator EndStrided(uint32_t stride) const {
+		auto finish = buffer.Memory<std::byte const>(byteOffset + byteSize);
+		return const_iterator{ finish, finish, stride };
+	}
 
 };
 
@@ -104,6 +171,11 @@ struct MeshDataStream {
 			elemByteStride == other.elemByteStride &&
 			bufferView == other.bufferView;
 	}
+
+    auto begin() { return bufferView.BeginStrided(0, elemByteStride); }
+    auto end()   { return bufferView.EndStrided(elemByteStride); }
+    auto begin() const { return bufferView.BeginStrided(0, elemByteStride); }
+    auto end()   const { return bufferView.EndStrided(elemByteStride); }
 
 };
 
@@ -130,6 +202,128 @@ struct MeshAttribute {
 
 	//Returns the size of the type associated with this attribute
 	size_t TypeSize() const { return types::GetRuntimeTypeTraits(type).byteSizeUnit; }
+	size_t ElementByteSize() const { return types::GetRuntimeTypeTraits(type).byteSizeVector; }
+
+	uint32_t ElementStride() const {
+	    auto stride = stream.elemByteStride;
+	    if (stride == 0) {
+	        stride = static_cast<uint32_t>(types::GetRuntimeTypeTraits(type).byteSizeVector);
+	    }
+	    return stride;
+	}
+
+	template<typename BytePtr>
+	struct ElementRef {
+		using ByteType = std::conditional_t<
+			std::is_const_v<std::remove_pointer_t<BytePtr>>,
+			const std::byte,
+			std::byte
+		>;
+
+		BytePtr data = nullptr;
+		types::DataType dataType = types::DataType::Void;
+		size_t byteSize = 0;
+
+		template<typename T>
+		T Read() const {
+			return types::DynamicTypeConvert<T>(reinterpret_cast<std::byte const*>(data), dataType);
+		}
+
+		template<typename T>
+		void Write(T const& value) const {
+			types::DynamicTypeConvert(value, reinterpret_cast<std::byte*>(data), dataType);
+		}
+
+		std::span<ByteType> Bytes() const { return { data, byteSize }; }
+		template<typename T = std::byte>
+		T const* Data() const { return reinterpret_cast<T const*>(data); }
+		size_t Size() const { return byteSize; }
+		types::DataType AttributeType() const { return dataType; }
+		bool IsValid() const { return data != nullptr && byteSize > 0; }
+		explicit operator bool() const { return IsValid(); }
+	};
+
+	template<typename IteratorType, typename BytePtr>
+	struct ElementIterator {
+		using iterator_category = std::forward_iterator_tag;
+		using value_type = ElementRef<BytePtr>;
+		using difference_type = std::ptrdiff_t;
+
+		IteratorType it{};
+		types::DataType dataType = types::DataType::Void;
+		size_t byteSize = 0;
+
+		value_type operator*() const { return { *it, dataType, byteSize }; }
+		ElementIterator& operator++() { ++it; return *this; }
+		friend bool operator==(ElementIterator const& a, ElementIterator const& b) { return a.it == b.it; }
+		friend bool operator!=(ElementIterator const& a, ElementIterator const& b) { return !(a == b); }
+	};
+
+	template<typename IteratorType, typename BytePtr>
+	struct ElementRange {
+		using iterator = ElementIterator<IteratorType, BytePtr>;
+
+		iterator first;
+		iterator last;
+
+		iterator begin() const { return first; }
+		iterator end() const { return last; }
+		bool empty() const { return first == last; }
+	};
+
+	using ElementRangeType = ElementRange<MeshBufferView::iterator, std::byte*>;
+	using ConstElementRangeType = ElementRange<MeshBufferView::const_iterator, std::byte const*>;
+	using ElementRefType = ElementRef<std::byte*>;
+	using ConstElementRefType = ElementRef<std::byte const*>;
+
+	ElementRefType Element(uint32_t vertexIndex) {
+		return MakeElementRef<std::byte>(vertexIndex);
+	}
+
+	ConstElementRefType Element(uint32_t vertexIndex) const {
+		return MakeElementRef<const std::byte>(vertexIndex);
+	}
+
+	ElementRangeType Elements() {
+		auto stride = ElementStride();
+		auto byteSize = ElementByteSize();
+		return ElementRangeType{
+			{ stream.bufferView.BeginStrided(strideOffset, stride), type, byteSize },
+			{ stream.bufferView.EndStrided(stride), type, byteSize }
+		};
+	}
+
+	ConstElementRangeType Elements() const {
+		auto stride = ElementStride();
+		auto byteSize = ElementByteSize();
+		return ConstElementRangeType{
+			{ stream.bufferView.BeginStrided(strideOffset, stride), type, byteSize },
+			{ stream.bufferView.EndStrided(stride), type, byteSize }
+		};
+	}
+
+    auto begin() { return stream.bufferView.BeginStrided(strideOffset, ElementStride()); }
+    auto end()   { return stream.bufferView.EndStrided(ElementStride()); }
+	auto begin() const { return stream.bufferView.BeginStrided(strideOffset, ElementStride()); }
+	auto end()   const { return stream.bufferView.EndStrided(ElementStride()); }
+
+private:
+	template<typename ByteType>
+	ElementRef<ByteType*> MakeElementRef(uint32_t vertexIndex) const {
+		auto stride = ElementStride();
+		auto byteSize = ElementByteSize();
+		if (stride == 0 || byteSize == 0) {
+			return {};
+		}
+
+		uint64_t offset = strideOffset + static_cast<uint64_t>(vertexIndex) * stride;
+		if (offset + byteSize > stream.bufferView.byteSize) {
+			return {};
+		}
+
+		auto bufferOffset = stream.bufferView.byteOffset + offset;
+		return { stream.bufferView.buffer.Memory<ByteType>(bufferOffset), type, byteSize };
+	}
 };
 
 //Index buffer definition
@@ -141,6 +335,7 @@ struct MeshIndex {
 	bool primitiveRestart = false; //Indicates if primitive restart is used for this index
 
 	size_t TypeSize() const { return types::GetRuntimeTypeTraits(type).byteSizeUnit; }
+	uint32_t ElementStride() const { return static_cast<uint32_t>(TypeSize()); }
 	void Indexless(uint32_t vertexCount) {
 		count = vertexCount;
 		type = types::DataType::UserExtended;
@@ -148,6 +343,55 @@ struct MeshIndex {
 	}
 
 	bool IsIndexless() const { return type == types::DataType::UserExtended; }
+
+	template<typename T = uint32_t>
+	T Read(uint32_t position) const {
+		if (position >= count || IsIndexless() || type == types::DataType::Void) {
+			return T{};
+		}
+
+		auto stride = ElementStride();
+		if (stride == 0) {
+			return T{};
+		}
+
+		auto offset = static_cast<uint64_t>(position) * stride;
+		if (offset + stride > bufferView.byteSize) {
+			return T{};
+		}
+
+		auto data = bufferView.Memory<std::byte const>(offset);
+		if (!data) {
+			return T{};
+		}
+
+		return types::DynamicTypeConvert<T>(data, type);
+	}
+
+	template<typename T>
+	bool Write(uint32_t position, T const& value) const {
+		if (position >= count || IsIndexless() || type == types::DataType::Void) {
+			return false;
+		}
+
+		auto stride = ElementStride();
+		if (stride == 0) {
+			return false;
+		}
+
+		auto offset = static_cast<uint64_t>(position) * stride;
+		if (offset + stride > bufferView.byteSize) {
+			return false;
+		}
+
+		auto data = bufferView.Memory<std::byte>(offset);
+		if (!data) {
+			return false;
+		}
+
+		types::DynamicTypeConvert(value, data, type);
+		return true;
+	}
 };
 
 //Section definition
@@ -186,6 +430,16 @@ private:
 	std::vector<MeshBuffer> buffers; //The memory storage
 
 public:
+	template<typename MeshT>
+	class VertexProxyBase;
+	using VertexProxy = VertexProxyBase<MeshData const>;
+	using MutableVertexProxy = VertexProxyBase<MeshData>;
+
+	template<typename MeshT>
+	class VertexRangeBase;
+	using VertexRange = VertexRangeBase<MeshData const>;
+	using MutableVertexRange = VertexRangeBase<MeshData>;
+
 	MeshData() = default;
 	MeshData(MeshData const &other);
 	MeshData(MeshData&&) noexcept = default;
@@ -227,10 +481,15 @@ public:
 
 	std::vector<MeshDataStream> GetUniqueStreams() const;
 
+	std::vector<std::pair<MeshAttribute::Label, uint32_t>> GetAttributeLabels() const;
+
 	std::vector<MeshAttribute> const& GetAttributes() const;
 	MeshAttribute const& GetAttribute(uint32_t channelId) const;
 	MeshAttribute const& GetAttribute(MeshAttribute::Label label, uint32_t skip = 0) const;
-	bool UpdateAttribute(MeshAttribute const& attribute);
+	MeshAttribute const* FindAttribute(uint32_t channelId) const;
+	MeshAttribute const* FindAttribute(MeshAttribute::Label label, uint32_t skip = 0) const;
+	MeshAttribute* FindAttributeMutable(uint32_t channelId);
+	MeshAttribute* FindAttributeMutable(MeshAttribute::Label label, uint32_t skip = 0);
 
 	//Section access
 	std::vector<MeshSection> const& GetSections() const;
@@ -241,6 +500,23 @@ public:
 	//Returns a mesh primitive given a name
 	static MeshPrimitive GetPrimitiveType(std::string const &name);
 
+	//Returns the amount of vertices based on the index or attributes set
+	uint32_t GetUniqueVertexCount() const;
+
+	//Returns the real count of indices (0 if HasIndex is false)
+	uint32_t GetIndexCount() const;
+
+	//Vertex traversal
+	MutableVertexRange UniqueVertices();
+	VertexRange UniqueVertices() const;
+	MutableVertexRange UniqueVertices(uint32_t start, uint32_t count);
+	VertexRange UniqueVertices(uint32_t start, uint32_t count) const;
+
+	MutableVertexRange IndexedVertices();
+	VertexRange IndexedVertices() const;
+	MutableVertexRange IndexedVertices(uint32_t start, uint32_t count);
+	VertexRange IndexedVertices(uint32_t start, uint32_t count) const;
+
 private:
 	bool IsValidBuffer(MeshBuffer buffer) const;
 	uint32_t FindFreeAttributeChannel() const;
@@ -248,7 +524,7 @@ private:
 	//TODO: Utility functions
 	//FuseMesh: Fuse one mesh after another into the same Mesh instance
 	//SubMesh: Generate a new mesh from a specified section of the mesh
-	//SwapYZ: Apply a 90º X rotation to swap Y and Z. Use sematic labels to detect correct channels
+	//SwapYZ: Apply a 90ï¿½ X rotation to swap Y and Z. Use sematic labels to detect correct channels
 	//InvertWinding: Invert the winding of the mesh data or the index
 	//Transform: Apply a given transform to the chosen attribute
 	//TransformGeom: Apply a given transform using the semantic labels to detect the actual effect. Positions are tranformed, normals, tangents anb bt are only rotated
@@ -260,5 +536,151 @@ private:
 	//SortSpherical: Sort triangles in respect to a point in space. Respect section limits
 	//SortProjection: Sort according to the projected triangles on the given matrix
 	//Saves a binary file for version 100
+};
+
+template<typename MeshT>
+class MeshData::VertexProxyBase {
+private:
+	using AttributeType = std::conditional_t<std::is_const_v<MeshT>, MeshAttribute const, MeshAttribute>;
+	using AttributeRefType = std::conditional_t<std::is_const_v<MeshT>, MeshAttribute::ConstElementRefType, MeshAttribute::ElementRefType>;
+
+public:
+	VertexProxyBase() = default;
+	VertexProxyBase(MeshT* meshData, uint32_t indexPos, uint32_t vertex)
+		: mesh(meshData)
+		, indexPosition(indexPos)
+		, vertexIndex(vertex) {}
+
+	uint32_t IndexPosition() const { return indexPosition; }
+	uint32_t VertexIndex() const { return vertexIndex; }
+
+	AttributeRefType Attribute(AttributeType& attribute) const {
+		return attribute.Element(vertexIndex);
+	}
+
+	AttributeRefType Attribute(MeshAttribute::Label label, uint32_t skip = 0) const {
+		auto attr = FindAttribute(label, skip);
+		return attr ? Attribute(*attr) : AttributeRefType{};
+	}
+
+	bool HasAttribute(MeshAttribute::Label label, uint32_t skip = 0) const {
+		return FindAttribute(label, skip) != nullptr;
+	}
+
+	template<typename T>
+	void WriteAttribute(MeshAttribute::Label label, T const& value, uint32_t skip = 0) const {
+		if constexpr (!std::is_const_v<MeshT>) {
+			auto attr = FindAttribute(label, skip);
+			if (attr) {
+				auto element = attr->Element(vertexIndex);
+				if (element) {
+					element.Write(value);
+				}
+			}
+		}
+	}
+
+private:
+	AttributeType* FindAttribute(uint32_t channelId) const {
+		if (!mesh) {
+			return nullptr;
+		}
+
+		if constexpr (std::is_const_v<MeshT>) {
+			return mesh->FindAttribute(channelId);
+		}
+		else {
+			return mesh->FindAttributeMutable(channelId);
+		}
+	}
+
+	AttributeType* FindAttribute(MeshAttribute::Label label, uint32_t skip) const {
+		if (!mesh) {
+			return nullptr;
+		}
+
+		if constexpr (std::is_const_v<MeshT>) {
+			return mesh->FindAttribute(label, skip);
+		}
+		else {
+			return mesh->FindAttributeMutable(label, skip);
+		}
+	}
+
+	MeshT* mesh = nullptr;
+	uint32_t indexPosition = 0;
+	uint32_t vertexIndex = 0;
+};
+
+template<typename MeshT>
+class MeshData::VertexRangeBase {
+public:
+	using ProxyType = VertexProxyBase<MeshT>;
+
+	struct iterator {
+		using iterator_category = std::forward_iterator_tag;
+		using value_type = ProxyType;
+		using difference_type = std::ptrdiff_t;
+
+		VertexRangeBase const* range = nullptr;
+		uint32_t indexPositionOffset = 0;
+
+		value_type operator*() const { return range->MakeVertex(indexPositionOffset); }
+		iterator& operator++() { ++indexPositionOffset; return *this; }
+		friend bool operator==(iterator const& a, iterator const& b) {
+			return a.range == b.range && a.indexPositionOffset == b.indexPositionOffset;
+		}
+		friend bool operator!=(iterator const& a, iterator const& b) {
+			return !(a == b);
+		}
+	};
+
+	iterator begin() const { return iterator{ this, 0 }; }
+	iterator end() const { return iterator{ this, count }; }
+	bool empty() const { return count == 0; }
+	uint32_t size() const { return count; }
+
+private:
+	friend class MeshData;
+
+	VertexRangeBase(MeshT& meshData, uint32_t startIndex, uint32_t vertexCount, bool useIndex)
+		: mesh(&meshData)
+		, start(startIndex)
+		, count(vertexCount)
+		, useIndex(useIndex) {}
+
+	ProxyType MakeVertex(uint32_t indexPositionOffset) const {
+		uint32_t indexPosition = start + indexPositionOffset;
+		return { mesh, indexPosition, ResolveVertexIndex(indexPosition) };
+	}
+
+	uint32_t ResolveVertexIndex(uint32_t indexPosition) const {
+		if (!mesh) {
+			return 0;
+		}
+
+		if (!useIndex || !mesh->HasIndex()) {
+			return indexPosition;
+		}
+
+		auto const& meshIndex = mesh->GetIndex();
+		auto stride = static_cast<uint32_t>(meshIndex.TypeSize());
+		if (stride == 0) {
+			return 0;
+		}
+
+		auto relativeOffset = static_cast<uint64_t>(indexPosition) * stride;
+		if (relativeOffset + stride > meshIndex.bufferView.byteSize) {
+			return 0;
+		}
+
+		auto data = meshIndex.bufferView.template Memory<std::byte const>(relativeOffset);
+		return types::DynamicTypeConvert<uint32_t>(data, meshIndex.type);
+	}
+
+	MeshT* mesh{};
+	uint32_t start{};
+	uint32_t count{};
+	bool useIndex{};
 };
 }

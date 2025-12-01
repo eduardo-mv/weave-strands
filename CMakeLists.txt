@@ -55,7 +55,9 @@ set(WEAVE_TEST_SOURCES
     tests/graphics/core/MeshDataTests.cpp
     tests/graphics/core/MeshLayoutTests.cpp
     tests/graphics/core/MeshLoaderTests.cpp
+    tests/graphics/core/MeshUtilitiesTests.cpp
     tests/graphics/core/Primitives3DTests.cpp
+    tests/system/memory/DataTypeTests.cpp
 )
 if(WEAVE_BUILD_DEMO)
     if(WIN32)

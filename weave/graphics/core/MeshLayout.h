@@ -2,6 +2,7 @@
 
 #include "weave/graphics/core/MeshData.h"
 #include <span>
+#include <span>
 
 namespace weave::graphics {
 
@@ -26,10 +27,14 @@ public:
     MeshLayout& AddAttribute(size_t bufferIndex, MeshAttribute::Label label, types::DataType type, uint32_t strideOffset);
     MeshLayout& SetIndexType(types::DataType type);
 
-    MeshData Build(std::vector<std::span<const std::byte>> bufferData = {}) const;
+    MeshData Build(uint32_t vertexCount, uint32_t indexCount = 0) const;
+    
+    bool HasIndex() const { return indexType != types::DataType::Void && indexType != types::DataType::UserExtended; }
 
     std::vector<Buffer> buffers;
     types::DataType indexType = types::DataType::Void;
+    MeshPrimitive primitive{};
+    bool primitiveRestart{};
 };
 
 bool operator==(MeshLayout const& lhs, MeshLayout const& rhs);

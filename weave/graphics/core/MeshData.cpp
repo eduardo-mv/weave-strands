@@ -20,6 +20,10 @@ MeshData::~MeshData()
 
 MeshData& MeshData::operator=(MeshData const& other)
 {
+	if (this == &other) {
+		return *this;
+	}
+
 	for (auto& buffer : buffers) {
 		std::free(buffer.data);
 	}
@@ -136,13 +140,7 @@ bool MeshData::SetIndex(MeshIndex const& indexIn)
 void MeshData::NoIndex(uint32_t vertexCount) {
 
 	if(vertexCount == ~0u) {
-		//Attempt to figure out the amount of vertices by looking at the strides on the attribute streams
-		for(auto const &attrib : attributes) {
-			vertexCount = attrib.stream.VertexCount();
-			if(vertexCount != 0) {
-				break;
-			}
-		}
+		vertexCount = GetUniqueVertexCount();
 	}
 
 	index.Indexless(vertexCount);
@@ -223,6 +221,18 @@ std::vector<MeshDataStream> MeshData::GetUniqueStreams() const
 	return streams;
 }
 
+std::vector<std::pair<MeshAttribute::Label, uint32_t>> MeshData::GetAttributeLabels() const {
+	std::unordered_map<MeshAttribute::Label, uint32_t> labelCounter;
+	std::vector<std::pair<MeshAttribute::Label, uint32_t>> labels;
+
+	for(auto const& attr : attributes) {
+		auto skip = labelCounter[attr.label]++;
+		labels.emplace_back(attr.label, skip);
+	}
+
+	return labels;
+}
+
 std::vector<MeshAttribute> const& MeshData::GetAttributes() const
 {
 	return attributes;
@@ -231,35 +241,55 @@ std::vector<MeshAttribute> const& MeshData::GetAttributes() const
 MeshAttribute const& MeshData::GetAttribute(uint32_t channelId) const
 {
 	static MeshAttribute empty;
-	return attributes.size() > channelId ? attributes[channelId] : empty;
+	auto attr = FindAttribute(channelId);
+	return attr ? *attr : empty;
 }
 
 MeshAttribute const& MeshData::GetAttribute(MeshAttribute::Label label, uint32_t skip) const
+{
+	static MeshAttribute empty;
+	auto attr = FindAttribute(label, skip);
+	return attr ? *attr : empty;
+}
+
+MeshAttribute const* MeshData::FindAttribute(uint32_t channelId) const
+{
+	return attributes.size() > channelId ? &attributes[channelId] : nullptr;
+}
+
+MeshAttribute const* MeshData::FindAttribute(MeshAttribute::Label label, uint32_t skip) const
 {
 	uint32_t count = 0;
 	for (auto const& attrib : attributes) {
 		if (attrib.label == label) {
 			if (count == skip) {
-				return attrib;
+				return &attrib;
 			}
 			++count;
 		}
 	}
 
-	static MeshAttribute empty;
-	return empty;
+	return nullptr;
 }
 
-bool MeshData::UpdateAttribute(MeshAttribute const& attribute)
+MeshAttribute* MeshData::FindAttributeMutable(uint32_t channelId)
 {
+	return attributes.size() > channelId ? &attributes[channelId] : nullptr;
+}
+
+MeshAttribute* MeshData::FindAttributeMutable(MeshAttribute::Label label, uint32_t skip)
+{
+	uint32_t count = 0;
 	for (auto & attrib : attributes) {
-		if (attrib.channelId == attribute.channelId) {
-			attrib = attribute;
-			return true;
+		if (attrib.label == label) {
+			if (count == skip) {
+				return &attrib;
+			}
+			++count;
 		}
 	}
-	
-	return false;
+
+	return nullptr;
 }
 
 std::vector<MeshSection> const& MeshData::GetSections() const
@@ -321,6 +351,108 @@ MeshPrimitive MeshData::GetPrimitiveType(std::string const & name) {
 		return it->second;
 	else
 		return MeshPrimitive::Triangles;
+}	
+
+uint32_t MeshData::GetUniqueVertexCount() const {
+	if(!HasIndex() && index.count != 0) {
+		return index.count;
+	}
+
+    uint32_t vertexCount = 0;
+	//Attempt to figure out the amount of vertices by looking at the strides on the attribute streams
+	for(auto const &attrib : attributes) {
+        vertexCount = std::max<uint32_t>(vertexCount, attrib.stream.VertexCount());
+	}
+
+	return vertexCount;
+}
+
+uint32_t MeshData::GetIndexCount() const {
+	if(!HasIndex()) {
+		return 0;
+	}
+
+	return index.count;
+}
+
+MeshData::MutableVertexRange MeshData::UniqueVertices()
+{
+	uint32_t count = GetUniqueVertexCount();
+	return MutableVertexRange(*this, 0, count, false);
+}
+
+MeshData::VertexRange MeshData::UniqueVertices() const
+{
+	uint32_t count = GetUniqueVertexCount();
+	return VertexRange(*this, 0, count, false);
+}
+
+MeshData::MutableVertexRange MeshData::UniqueVertices(uint32_t start, uint32_t count)
+{
+	auto const total = GetUniqueVertexCount();
+	if (start >= total) {
+		return MutableVertexRange(*this, total, 0, false);
+	}
+
+	auto clampedCount = std::min<uint32_t>(count, total - start);
+	return MutableVertexRange(*this, start, clampedCount, false);
+}
+
+MeshData::VertexRange MeshData::UniqueVertices(uint32_t start, uint32_t count) const
+{
+	auto const total = GetUniqueVertexCount();
+	if (start >= total) {
+		return VertexRange(*this, total, 0, false);
+	}
+
+	auto clampedCount = std::min<uint32_t>(count, total - start);
+	return VertexRange(*this, start, clampedCount, false);
+}
+
+MeshData::MutableVertexRange MeshData::IndexedVertices()
+{	
+	if(!HasIndex()) {
+		return MutableVertexRange(*this, 0, GetUniqueVertexCount(), false);
+	}
+	return MutableVertexRange(*this, 0, index.count, true);
+}
+
+MeshData::VertexRange MeshData::IndexedVertices() const
+{	
+	if(!HasIndex()) {
+		return UniqueVertices();
+	}
+	return VertexRange(*this, 0, index.count, true);
+}
+
+MeshData::MutableVertexRange MeshData::IndexedVertices(uint32_t start, uint32_t count)
+{
+	if(!HasIndex()) {
+		return MutableVertexRange(*this, 0, 0, false);
+	}
+
+	auto const indexTotal = index.count;
+	if (start >= indexTotal) {
+		return MutableVertexRange(*this, indexTotal, 0, true);
+	}
+
+	auto clampedCount = std::min<uint32_t>(count, indexTotal - start);
+	return MutableVertexRange(*this, start, clampedCount, true);
+}
+
+MeshData::VertexRange MeshData::IndexedVertices(uint32_t start, uint32_t count) const
+{
+	if(!HasIndex()) {
+		return UniqueVertices(start, count);
+	}
+
+	auto const indexTotal = index.count;
+	if (start >= indexTotal) {
+		return VertexRange(*this, indexTotal, 0, true);
+	}
+
+	auto clampedCount = std::min<uint32_t>(count, indexTotal - start);
+	return VertexRange(*this, start, clampedCount, true);
 }
 
 bool MeshData::IsValidBuffer(MeshBuffer buffer) const

@@ -34,6 +34,8 @@ MeshLayout MeshLayout::FromMeshData(MeshData const& mesh) {
     }
 
     layout.indexType = mesh.HasIndex() ? mesh.GetIndex().type : types::DataType::Void;
+    layout.primitive = mesh.Primitive();
+    layout.primitiveRestart = mesh.GetIndex().primitiveRestart;
 
     return layout;
 }
@@ -56,14 +58,14 @@ MeshLayout& MeshLayout::SetIndexType(types::DataType type) {
     return *this;
 }
 
-MeshData MeshLayout::Build(std::vector<std::span<const std::byte>> bufferData) const {
+MeshData MeshLayout::Build(uint32_t vertexCount, uint32_t indexCount) const {
     MeshData mesh;
-    mesh.SetPrimitive(MeshPrimitive::Triangles);
+    mesh.SetPrimitive(primitive);
 
     for (size_t i = 0; i < buffers.size(); ++i) {
         auto const& buf = buffers[i];
-        const size_t dataSize = bufferData.size() > i ? bufferData[i].size() : 0;
-        auto stream = mesh.AllocateStream(buf.stride, dataSize, dataSize ? bufferData[i].data() : nullptr, false);
+        uint64_t dataSize = static_cast<uint64_t>(buf.stride) * vertexCount;
+        auto stream = mesh.AllocateStream(buf.stride, dataSize, nullptr, false);
         for (auto const& attr : buf.attributes) {
             mesh.AddAttribute(MeshAttribute{
                 attr.label,
@@ -75,8 +77,11 @@ MeshData MeshLayout::Build(std::vector<std::span<const std::byte>> bufferData) c
         }
     }
 
-    if (indexType != types::DataType::Void) {
-        mesh.SetIndex(mesh.AllocateIndex(indexType, 0, false, nullptr, false));
+    if (HasIndex()) {
+        mesh.SetIndex(mesh.AllocateIndex(indexType, indexCount, primitiveRestart, nullptr, false));
+    }
+    else {
+        mesh.NoIndex(vertexCount);
     }
 
     return mesh;

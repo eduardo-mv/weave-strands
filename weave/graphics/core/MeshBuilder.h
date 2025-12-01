@@ -42,11 +42,13 @@ public:
     MeshBuilder& AddIndex(types::DataType type, uint32_t indicesCount, bool primitiveRestart, void const* dataToCopy);
     MeshBuilder& NoIndex(uint32_t vertexCount = ~0u);
 
+    //TODO: Remove these templates and rework. They lead to wrong typing of attributes that is hard to spot
     template<typename Type, size_t count>
     MeshBuilder& AddAttribute(MeshAttribute::Label label, Type const (&dataToCopy)[count]) {
         return AddAttribute(label, types::TypeTraits<Type>::dataTypeValue, sizeof(dataToCopy), dataToCopy);
     }
 
+    //TODO: Remove these templates and rework. They lead to wrong typing of attributes that is hard to spot
     template<typename Type>
     MeshBuilder& AddAttribute(MeshAttribute::Label label, uint32_t elementCount, Type const* dataToCopy) {
         return AddAttribute(label, types::TypeTraits<Type>::dataTypeValue, sizeof(Type) * elementCount, dataToCopy);

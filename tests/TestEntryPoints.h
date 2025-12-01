@@ -22,5 +22,10 @@ TestReport TestMeshBuilder();
 TestReport TestMeshData();
 TestReport TestMeshLayout();
 TestReport TestMeshLoader();
+TestReport TestMeshUtilities();
 TestReport TestPrimitives3D();
+}
+
+namespace weave::tests::system::memory {
+TestReport TestDataType();
 }

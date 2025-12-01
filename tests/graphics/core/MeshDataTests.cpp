@@ -44,7 +44,7 @@ TestReport TestMeshData() {
 	auto uniqueStreams = mesh.GetUniqueStreams();
 	report.Expect(uniqueStreams.size() == 2, "Expected unique streams to match attribute count when buffers differ");
 
-	const std::array<uint16_t, 3> indices{ 0, 1, 2 };
+	const std::array<uint16_t, 3> indices{ 2, 1, 0 };
 	auto meshIndex = mesh.AllocateIndex(DataType::UInt16, static_cast<uint32_t>(indices.size()), false, indices.data());
 	report.Expect(mesh.SetIndex(meshIndex), "SetIndex should accept an index with a known buffer");
 	report.Expect(mesh.HasIndex(), "Mesh should report it has an index");
@@ -71,18 +71,65 @@ TestReport TestMeshData() {
 	report.Expect(mesh.GetBuffer(bufferId).Size() == posStream.bufferView.buffer.Size(), "Buffer lookup should return same size");
 	report.Expect(mesh.GetBuffers().size() == 3, "Expected two vertex buffers plus index buffer");
 
-	MeshAttribute updatedNormal = normalAttr;
-	updatedNormal.strideOffset = 4;
-	report.Expect(mesh.UpdateAttribute(updatedNormal), "UpdateAttribute should succeed for known channel");
-	const auto& reloadedNormal = mesh.GetAttribute(MeshAttribute::Label::Normal);
-	report.Expect(reloadedNormal.strideOffset == 4, "Updated normal should reflect stride offset change");
+	std::array<uint32_t, 3> expectedVertexOrder{ 2u, 1u, 0u };
+	uint32_t logicalVertex = 0;
+	for (auto vertex : mesh.IndexedVertices()) {
+		report.Expect(vertex.IndexPosition() == logicalVertex, "Index position should match iteration order");
+		report.Expect(vertex.VertexIndex() == expectedVertexOrder[logicalVertex], "Indexed vertex should resolve to expected source vertex");
+
+		auto positionSample = vertex.Attribute(MeshAttribute::Label::Position);
+		report.Expect(positionSample.IsValid(), "Vertex proxy should expose position attribute");
+		auto expectedBase = expectedVertexOrder[logicalVertex] * 3;
+		auto position = positionSample.Read<std::array<float, 3>>();
+		report.Expect(position[0] == positions[expectedBase + 0], "Vertex X value mismatch");
+		report.Expect(position[1] == positions[expectedBase + 1], "Vertex Y value mismatch");
+		report.Expect(position[2] == positions[expectedBase + 2], "Vertex Z value mismatch");
+		++logicalVertex;
+	}
 
 	mesh.NoIndex(static_cast<uint32_t>(positions.size() / 3));
 	report.Expect(!mesh.HasIndex(), "Mesh should report no index after NoIndex()");
 	report.Expect(mesh.GetIndex().count == positions.size() / 3, "Indexless mesh should store vertex count");
 
+	uint32_t vertexId = 0;
+	for (auto vertex : mesh.UniqueVertices()) {
+		report.Expect(vertex.VertexIndex() == vertexId, "Indexless vertex index should match iteration order");
+		auto normalSample = vertex.Attribute(MeshAttribute::Label::Normal);
+		report.Expect(normalSample.IsValid(), "Indexless vertex should expose normal attribute");
+		report.Expect(normalSample.AttributeType() == DataType::Float_3, "Normal attribute type mismatch");
+		auto values = normalSample.Read<std::array<float, 3>>();
+		report.Expect(values[2] == 1.0f, "Indexless vertex normal should match stored data");
+		++vertexId;
+	}
+
+	uint32_t writeCursor = 0;
+	for (auto vertex : mesh.UniqueVertices()) {
+		std::array<float, 3> override{
+			static_cast<float>(writeCursor + 10),
+			static_cast<float>(writeCursor + 11),
+			static_cast<float>(writeCursor + 12)
+		};
+		vertex.WriteAttribute(MeshAttribute::Label::Position, override);
+		auto updated = vertex.Attribute(MeshAttribute::Label::Position);
+		auto values = updated.Read<std::array<float, 3>>();
+		report.Expect(values == override, "Mutable vertex attribute write should persist");
+		++writeCursor;
+	}
+
 	report.Expect(MeshData::GetPrimitiveType("triangle_strip") == MeshPrimitive::TriStrip, "Primitive lookup failed for triangle_strip");
 	report.Expect(MeshData::GetPrimitiveType("unknown") == MeshPrimitive::Triangles, "Unknown primitive should fall back to triangles");
+
+	for(auto elem : normalAttr.Elements()) {
+		float f = elem.Read<float>();
+		report.Expect(f == *reinterpret_cast<float const*>(elem.Data()), "DynamicTypeConvert must report same value conversions (float)");
+
+		std::array<float,3> f3 = elem.Read<std::array<float,3>>();
+		report.Expect(
+			f3[0] == reinterpret_cast<float const*>(elem.Data())[0] &&
+			f3[1] == reinterpret_cast<float const*>(elem.Data())[1] &&
+			f3[2] == reinterpret_cast<float const*>(elem.Data())[2], 
+			"DynamicTypeConvert must report same value conversions (float)");
+	}
 
 	return report;
 }

@@ -218,9 +218,21 @@ bool RunAllTests() {
 		allPassed = false;
 	}
 
+	auto meshUtilitiesReport = weave::tests::graphics::core::TestMeshUtilities();
+	if (!meshUtilitiesReport) {
+		logFailures("graphics.core.mesh_utilities", meshUtilitiesReport);
+		allPassed = false;
+	}
+
 	auto primitivesReport = weave::tests::graphics::core::TestPrimitives3D();
 	if (!primitivesReport) {
 		logFailures("graphics.core.primitives", primitivesReport);
+		allPassed = false;
+	}
+
+	auto dataTypeReport = weave::tests::system::memory::TestDataType();
+	if (!dataTypeReport) {
+		logFailures("system.memory.data_type", dataTypeReport);
 		allPassed = false;
 	}
 

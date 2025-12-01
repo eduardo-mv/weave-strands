@@ -89,10 +89,8 @@ public:
 				auto& traits = GetRuntimeTypeTraits(clip->channels[N].dataType);
 					
 				using SampleType = std::decay_t<decltype(sampleOut)>;
-				SampleType sampleA, sampleB;
-
-				DynamicTypeConvert<SampleType>::Convert(sampleA, clip.GetSample(N, numSampleA), traits);
-				DynamicTypeConvert<SampleType>::Convert(sampleB, clip.GetSample(N, numSampleB), traits);
+				SampleType sampleA = DynamicTypeConvert<SampleType>(clip.GetSample(N, numSampleA), traits);
+				SampleType sampleB = DynamicTypeConvert<SampleType>(clip.GetSample(N, numSampleB), traits);
 					
 				sampleOut = weave::interpolation::lerp(sampleA, sampleB, u);
 

@@ -57,25 +57,19 @@ TestReport TestMeshLayout() {
 		0.0f, 1.0f
 	};
 
-	std::array<std::byte, sizeof(positions)> posBytes{};
-	std::memcpy(posBytes.data(), positions.data(), posBytes.size());
-	std::array<std::byte, sizeof(uvs)> uvBytes{};
-	std::memcpy(uvBytes.data(), uvs.data(), uvBytes.size());
-
-	std::vector<std::span<const std::byte>> bufferData{
-		std::span<const std::byte>(posBytes.data(), posBytes.size()),
-		std::span<const std::byte>(uvBytes.data(), uvBytes.size())
-	};
-
-	auto builtMesh = manual.Build(bufferData);
+	auto builtMesh = manual.Build(static_cast<uint32_t>(positions.size() / 3));
 	report.Expect(builtMesh.GetAttributes().size() == 2, "Manual layout should generate two attributes");
 	report.Expect(builtMesh.HasIndex(), "Manual layout with index type set should create an index buffer");
 	report.Expect(builtMesh.GetIndex().count == 0, "Layout build uses empty index placeholder by default");
 
 	auto builtPosition = builtMesh.GetAttribute(MeshAttribute::Label::Position);
+	std::memcpy(builtPosition.stream.bufferView.Memory(), positions.data(), sizeof(positions));
+	auto builtUV = builtMesh.GetAttribute(MeshAttribute::Label::UVCoord);
+	std::memcpy(builtUV.stream.bufferView.Memory(), uvs.data(), sizeof(uvs));
+
 	auto builtPositionFloats = builtPosition.stream.bufferView.Memory<const float>();
 	report.Expect(std::equal(builtPositionFloats, builtPositionFloats + positions.size(), positions.begin()),
-		"Position data built from layout should match supplied bytes");
+		"Position data built from layout should match written bytes");
 
 	auto layoutCopy = layout;
 	report.Expect(layout == layoutCopy, "Copied layout should compare equal");

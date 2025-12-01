@@ -4,8 +4,92 @@
 #include <unordered_map>
 #include <vector>
 #include <sstream>
+#include <cstring>
 
-using namespace weave::types;
+namespace weave::types {
+
+namespace {
+
+template<typename Func>
+void DispatchUnderlyingType(DataType type, Func&& func) {
+	switch (type) {
+#define DISPATCH_CASE(TYPE_ENUM) \
+	case TYPE_ENUM: \
+		func.template operator()<typename DataTypeTraits<TYPE_ENUM>::Type>(); \
+		break;
+
+		DISPATCH_CASE(DataType::Int8)
+		DISPATCH_CASE(DataType::UInt8)
+		DISPATCH_CASE(DataType::Int16)
+		DISPATCH_CASE(DataType::UInt16)
+		DISPATCH_CASE(DataType::Int32)
+		DISPATCH_CASE(DataType::UInt32)
+		DISPATCH_CASE(DataType::Int64)
+		DISPATCH_CASE(DataType::UInt64)
+		DISPATCH_CASE(DataType::Float)
+		DISPATCH_CASE(DataType::Double)
+		DISPATCH_CASE(DataType::Bool)
+
+	default:
+		func.template operator()<float>();
+		break;
+#undef DISPATCH_CASE
+	}
+}
+
+template<typename OutScalar>
+void ConvertComponent(std::byte* dst, std::byte const* src, RuntimeTypeTraits const& srcTraits) {
+	auto assign = [&]<typename InScalar>() {
+		auto const* inPtr = reinterpret_cast<InScalar const*>(src);
+		auto* outPtr = reinterpret_cast<OutScalar*>(dst);
+		*outPtr = static_cast<OutScalar>(*inPtr);
+	};
+
+	DispatchUnderlyingType(srcTraits.underlyingDataTypeValue, assign);
+}
+
+void ConvertBytes(std::byte* outBytes, RuntimeTypeTraits const& outTraits,
+	std::byte const* inBytes, RuntimeTypeTraits const& inTraits) {
+
+	if (outTraits.byteSizeVector == 0) {
+		return;
+	}
+
+	if (inTraits.byteSizeVector == 0) {
+		std::memset(outBytes, 0, outTraits.byteSizeVector);
+		return;
+	}
+
+	auto convertOut = [&]<typename OutScalar>() {
+		size_t copyCount = std::min(outTraits.vectorSize, inTraits.vectorSize);
+		for (size_t i = 0; i < copyCount; ++i) {
+			auto* dst = outBytes + i * outTraits.byteSizeUnit;
+			auto const* src = inBytes + i * inTraits.byteSizeUnit;
+			ConvertComponent<OutScalar>(dst, src, inTraits);
+		}
+
+		for (size_t i = copyCount; i < outTraits.vectorSize; ++i) {
+			auto* dst = outBytes + i * outTraits.byteSizeUnit;
+			std::memset(dst, 0, outTraits.byteSizeUnit);
+		}
+	};
+
+	DispatchUnderlyingType(outTraits.underlyingDataTypeValue, convertOut);
+}
+
+} // namespace
+
+void DynamicTypeConvert(std::byte* dataOutBytes, DataType dataOutType, std::byte const* dataInBytes, DataType dataInType) {
+	auto const& outTraits = GetRuntimeTypeTraits(dataOutType);
+	auto const& inTraits = GetRuntimeTypeTraits(dataInType);
+	ConvertBytes(dataOutBytes, outTraits, dataInBytes, inTraits);
+}
+
+void DynamicTypeConvert(std::byte* dataOutBytes, RuntimeTypeTraits const& dataOutTypeTraits, std::byte const* dataInBytes, RuntimeTypeTraits const& dataInTypeTraits) {
+	ConvertBytes(dataOutBytes, dataOutTypeTraits, dataInBytes, dataInTypeTraits);
+}
+
+
 
 /*
 DataType weave::datatype::DataTypeFromName(std::string str) {
@@ -135,3 +219,5 @@ std::string weave::datatype::NameFromDataType(DataType type) {
 }
 
 */
+
+} // namespace weave::types
