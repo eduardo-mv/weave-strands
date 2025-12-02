@@ -29,6 +29,7 @@
 #include "weave/graphics/gl/resources/Mesh.h"
 #include "weave/graphics/gl/resources/MeshUploader.h"
 #include "weave/graphics/gl/resources/Buffer.h"
+#include "weave/graphics/gl/gpu/GpuGeometryAtlas.h"
 
 
 
@@ -586,8 +587,36 @@ void main() {
     weave::opengl::Mesh mesh =
         weave::opengl::MeshUploader::BuildMesh(meshData);
 
-    auto sphereData = weave::graphics::Sphere(0.5f);
+    auto sphereData = weave::graphics::Sphere(0.5f, 12, 24);
     auto sphere = weave::opengl::MeshUploader::BuildMesh(sphereData);
+
+    weave::graphics::MeshLayout atlasLayout;
+    auto& atlasBuffer = atlasLayout.AddBuffer(static_cast<uint32_t>(sizeof(float) * 3));
+    atlasBuffer.AddAttribute(weave::graphics::MeshAttribute::Label::Position,
+                             weave::types::DataType::Float_3,
+                             0);
+    atlasLayout.SetIndexType(weave::types::DataType::UInt32);
+    atlasLayout.primitive = weave::graphics::MeshPrimitive::Triangles;
+    atlasLayout.primitiveRestart = false;
+
+    weave::graphics::gl::gpu::GpuGeometryAtlas geometryAtlas(atlasLayout);
+
+    std::vector<weave::graphics::gl::gpu::GpuGeometryAtlas::Handle> atlasHandles;
+    {
+        std::vector<weave::graphics::gl::gpu::GpuGeometryAtlas::StreamingTicket> pendingTickets;
+        pendingTickets.push_back(
+            geometryAtlas.StreamMesh(std::make_shared<weave::graphics::MeshData>(meshData)));
+        pendingTickets.push_back(
+            geometryAtlas.StreamMesh(std::make_shared<weave::graphics::MeshData>(sphereData)));
+
+        geometryAtlas.ProcessStreamingQueue(0, std::chrono::milliseconds::zero());
+        for (auto& ticket : pendingTickets) {
+            auto result = ticket.future.get();
+            if (result.success && ticket.handle.IsValid()) {
+                atlasHandles.push_back(ticket.handle);
+            }
+        }
+    }
 
     weave::time::FrameTracker frameTracker;
     weave::time::IntervalTracker interval;
@@ -627,8 +656,26 @@ void main() {
 
         tex.Bind(0);
 
-        mesh.RenderInstances(1);
-        sphere.RenderInstances(1);
+        //mesh.RenderInstances(1);
+        //sphere.RenderInstances(1);
+
+        {
+            auto commandSpan = geometryAtlas.BuildDrawCommands(atlasHandles);
+            if (!commandSpan.empty()) {
+                auto vaoId = geometryAtlas.GetOrBuildVao();
+                ::gl::BindVertexArray(vaoId);
+                constexpr size_t kIndexStride = sizeof(uint32_t);
+                for (auto const& cmd : commandSpan) {
+                    const auto indexOffsetBytes = static_cast<uintptr_t>(cmd.firstIndex * kIndexStride);
+                    ::gl::DrawElementsBaseVertex(::gl::TRIANGLES,
+                                                 static_cast<GLsizei>(cmd.count),
+                                                 ::gl::UNSIGNED_INT,
+                                                 reinterpret_cast<void const*>(indexOffsetBytes),
+                                                 static_cast<GLint>(cmd.baseVertex));
+                }
+                ::gl::BindVertexArray(0);
+            }
+        }
 
 		std::array<InputEffectSharedState::MidiBar, InputEffectSharedState::kBarCount> barsSnapshot;
 		{
