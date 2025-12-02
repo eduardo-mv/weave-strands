@@ -65,6 +65,32 @@ void Buffer::UpdateBuffer(size_t internalOffset, void const* mem, size_t memSize
 	gl::NamedBufferSubData(gl_bufferId, GLintptr(internalOffset), memSize, mem);
 }
 
+void Buffer::GrowBuffer(size_t additionalBytes) {
+	if (additionalBytes == 0) {
+		return;
+	}
+
+	const size_t newSize = bufferByteSize + additionalBytes;
+	if (gl_bufferId == 0) {
+		Create(nullptr, newSize, bufferUsage);
+		return;
+	}
+
+	GLuint newBuffer = 0;
+	gl::GenBuffers(1, &newBuffer);
+	gl::BindBuffer(gl::COPY_WRITE_BUFFER, newBuffer);
+	gl::NamedBufferStorage(newBuffer, newSize, nullptr, GetGLUsage(bufferUsage));
+	gl::BindBuffer(gl::COPY_WRITE_BUFFER, 0);
+
+	if (bufferByteSize > 0) {
+		gl::CopyNamedBufferSubData(gl_bufferId, newBuffer, 0, 0, bufferByteSize);
+	}
+
+	gl::DeleteBuffers(1, &gl_bufferId);
+	gl_bufferId = newBuffer;
+	bufferByteSize = newSize;
+}
+
 void Buffer::BindToUniforms(GLuint gl_uniformBufferIndex) const {
 	if (gl_bufferId == 0) {
 		return;
@@ -104,4 +130,3 @@ void Buffer::ResizeToFit(size_t memSize, size_t minBufferIncrement)
 		Create(nullptr, expandTo, bufferUsage);
 	}
 }
-

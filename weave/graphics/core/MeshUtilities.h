@@ -11,6 +11,7 @@ MeshData ConvertMeshToIndexedBloated(MeshData const& source);
 MeshData ConvertMeshToIndexed(MeshData const& source);
 MeshData AddMeshes(MeshData const& lhs, MeshData const& rhs);
 MeshData ExtractSubmesh(MeshData const& source, uint32_t vertexStart, uint32_t vertexCount);
+MeshLayout FlattenLayoutToSingleBuffer(MeshLayout layout);
 
 
 }

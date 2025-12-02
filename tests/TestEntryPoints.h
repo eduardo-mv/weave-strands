@@ -28,4 +28,5 @@ TestReport TestPrimitives3D();
 
 namespace weave::tests::system::memory {
 TestReport TestDataType();
+TestReport TestStreamingForge();
 }

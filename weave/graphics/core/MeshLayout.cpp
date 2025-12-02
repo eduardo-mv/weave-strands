@@ -87,6 +87,7 @@ MeshData MeshLayout::Build(uint32_t vertexCount, uint32_t indexCount) const {
     return mesh;
 }
 
+
 bool weave::graphics::operator==(MeshLayout const& lhs, MeshLayout const& rhs) {
     if (lhs.indexType != rhs.indexType || lhs.buffers.size() != rhs.buffers.size()) {
         return false;

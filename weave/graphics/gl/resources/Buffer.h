@@ -52,6 +52,10 @@ public:
 		UpdateBuffer(internalOffset , &data, sizeof(data));
 	}
 
+	// Expands the underlying GL buffer by appending additional bytes while
+	// preserving the existing contents. No-op if additionalBytes == 0.
+	void GrowBuffer(size_t additionalBytes);
+
 	void UpdateBuffer(void const* mem, size_t memSize, size_t minBufferIncrement = 1);
 	void UpdateBuffer(size_t internalOffset, void const* mem, size_t memSize, size_t minBufferIncrement = 1);
 

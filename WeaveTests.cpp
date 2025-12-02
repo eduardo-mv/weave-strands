@@ -236,6 +236,12 @@ bool RunAllTests() {
 		allPassed = false;
 	}
 
+	auto streamingForgeReport = weave::tests::system::memory::TestStreamingForge();
+	if (!streamingForgeReport) {
+		logFailures("system.memory.streaming_forge", streamingForgeReport);
+		allPassed = false;
+	}
+
 	return allPassed;
 }
 

@@ -1,4 +1,5 @@
 #include "MeshUtilities.h"
+#include "weave/system/memory/DataType.h"
 
 #include <algorithm>
 #include <cstring>
@@ -78,23 +79,22 @@ void CopyIndexData(MeshIndex const& sourceIndex, MeshIndex const& targetIndex) {
 } // namespace
 
 MeshData ConvertMeshToLayout(MeshData const& source, MeshLayout const& targetLayout) {
-    
     MeshLayout sourceLayout = MeshLayout::FromMeshData(source);
     if (sourceLayout == targetLayout) {
         return source;
     }
-    
+
     MeshData working;
     bool sourceHasIndex = source.HasIndex();
     bool targetHasIndex = targetLayout.HasIndex();
 
-    if (sourceHasIndex && !targetHasIndex) {
-        working = ConvertMeshToIndexless(source);
-    }
-    else if (!sourceHasIndex && targetHasIndex) {
+    if (targetHasIndex && !sourceHasIndex) {
         working = ConvertMeshToIndexedBloated(source);
     }
-    else{
+    else if (!targetHasIndex && sourceHasIndex) {
+        working = ConvertMeshToIndexless(source);
+    }
+    else {
         working = source;
     }
 
@@ -253,7 +253,36 @@ MeshData ConvertMeshToIndexed(MeshData const& source) {
         index.Write(i, remap[i]);
     }
 
-    return converted;
+	return converted;
+}
+
+MeshLayout FlattenLayoutToSingleBuffer(MeshLayout layout) {
+	if (layout.buffers.empty()) {
+		return layout;
+	}
+
+	MeshLayout flat;
+	flat.indexType = layout.indexType;
+	flat.primitive = layout.primitive;
+	flat.primitiveRestart = layout.primitiveRestart;
+
+	auto& buffer = flat.AddBuffer(0);
+	uint32_t currentOffset = 0;
+	for (auto const& sourceBuffer : layout.buffers) {
+		for (auto const& attribute : sourceBuffer.attributes) {
+			buffer.attributes.push_back(MeshLayout::Buffer::Attribute{
+				attribute.label,
+				attribute.type,
+				currentOffset
+			});
+
+			auto const& traits = weave::types::GetRuntimeTypeTraits(attribute.type);
+			currentOffset += static_cast<uint32_t>(traits.byteSizeVector);
+		}
+	}
+
+	buffer.stride = currentOffset;
+	return flat;
 }
 
 MeshData AddMeshes(MeshData const& lhs, MeshData const& rhs) {

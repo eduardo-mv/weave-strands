@@ -28,7 +28,7 @@ public:
     MeshLayout& SetIndexType(types::DataType type);
 
     MeshData Build(uint32_t vertexCount, uint32_t indexCount = 0) const;
-    
+
     bool HasIndex() const { return indexType != types::DataType::Void && indexType != types::DataType::UserExtended; }
 
     std::vector<Buffer> buffers;

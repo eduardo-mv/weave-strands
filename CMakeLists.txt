@@ -58,6 +58,7 @@ set(WEAVE_TEST_SOURCES
     tests/graphics/core/MeshUtilitiesTests.cpp
     tests/graphics/core/Primitives3DTests.cpp
     tests/system/memory/DataTypeTests.cpp
+    tests/system/memory/StreamingForgeTests.cpp
 )
 if(WEAVE_BUILD_DEMO)
     if(WIN32)
