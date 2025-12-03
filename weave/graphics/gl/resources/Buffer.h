@@ -60,8 +60,11 @@ public:
 	void UpdateBuffer(size_t internalOffset, void const* mem, size_t memSize, size_t minBufferIncrement = 1);
 
 	void BindToUniforms(GLuint gl_uniformBufferIndex) const;
+	void BindRangeToUniforms(GLuint gl_uniformBufferIndex, size_t offsetBytes, size_t sizeBytes) const;
 	void BindToShader(GLuint gl_shaderBufferIndex) const;
-	void BindToTexture(GLuint gl_index, GLuint gl_textureId) const;
+	void BindRangeToShader(GLuint gl_shaderBufferIndex, size_t offsetBytes, size_t sizeBytes) const;
+	void BindToTexture(GLuint gl_index, GLuint gl_textureId, GLuint gl_internalFormat = gl::RGBA32F) const;
+	void BindRangeToTexture(GLuint gl_index, GLuint gl_textureId, size_t offsetBytes, size_t sizeBytes, GLuint gl_internalFormat = gl::RGBA32F) const;
 	void BindToTarget(GLenum gl_bufferTarget) const;
 
 private:

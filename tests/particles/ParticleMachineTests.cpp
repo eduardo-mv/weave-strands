@@ -1,11 +1,11 @@
 #include "tests/TestEntryPoints.h"
 
-#include "weave/particles/ParticleBuffer.h"
-#include "weave/particles/ParticleLayout.h"
-#include "weave/particles/ParticleMachine.h"
-#include "weave/particles/nodes/CommitEmissionNode.h"
-#include "weave/particles/nodes/ParticleEmitter.h"
-#include "weave/particles/nodes/ParticleNode.h"
+#include "weave/particles/core/ParticleBuffer.h"
+#include "weave/particles/core/ParticleLayout.h"
+#include "weave/particles/core/ParticleMachine.h"
+#include "weave/particles/core/nodes/CommitEmissionNode.h"
+#include "weave/particles/core/nodes/ParticleEmitter.h"
+#include "weave/particles/core/nodes/ParticleNode.h"
 
 #include <cmath>
 #include <cstddef>

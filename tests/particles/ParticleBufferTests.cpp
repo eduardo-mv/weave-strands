@@ -1,7 +1,7 @@
 #include "tests/TestEntryPoints.h"
 
-#include "weave/particles/ParticleBuffer.h"
-#include "weave/particles/ParticleLayout.h"
+#include "weave/particles/core/ParticleBuffer.h"
+#include "weave/particles/core/ParticleLayout.h"
 
 #include <cstddef>
 #include <cstdint>
