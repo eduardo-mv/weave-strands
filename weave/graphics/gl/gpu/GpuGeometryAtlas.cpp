@@ -61,14 +61,8 @@ GpuGeometryAtlas::~GpuGeometryAtlas() {
     }
 }
 
-GpuGeometryAtlas::StreamingTicket GpuGeometryAtlas::StreamMesh(std::shared_ptr<const graphics::MeshData> meshData) {
-    if (!meshData) {
-        return {};
-    }
-
-    Backend::Payload payload;
-    payload.mesh = std::move(meshData);
-    return forge.StreamPayload(std::move(payload));
+GpuGeometryAtlas::StreamingTicket GpuGeometryAtlas::StreamMesh(Backend::Payload meshDataOrFilename) {
+    return forge.StreamPayload(std::move(meshDataOrFilename));
 }
 
 GpuGeometryAtlas::StreamingTicket GpuGeometryAtlas::RemoveMesh(Handle handle) {

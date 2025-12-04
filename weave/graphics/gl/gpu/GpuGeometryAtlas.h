@@ -39,7 +39,7 @@ public:
     GpuGeometryAtlas(GpuGeometryAtlas&&) noexcept = delete;
     GpuGeometryAtlas& operator=(GpuGeometryAtlas&&) noexcept = delete;
 
-    StreamingTicket StreamMesh(std::shared_ptr<const graphics::MeshData> meshData);
+    StreamingTicket StreamMesh(Backend::Payload meshDataOrFilename);
     StreamingTicket RemoveMesh(Handle handle);
 
     StreamStatus QueryStreamingStatus(Handle handle) const;

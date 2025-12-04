@@ -1,5 +1,6 @@
 #include "GpuGeometryAtlasBackend.h"
 
+#include "weave/graphics/core/MeshLoader.h"
 #include "weave/graphics/core/MeshUtilities.h"
 #include "weave/system/memory/DataType.h"
 
@@ -25,14 +26,20 @@ GpuGeometryAtlasBackend::GpuGeometryAtlasBackend(graphics::MeshLayout layout)
 }
 
 std::pair<bool, std::string> GpuGeometryAtlasBackend::UploadEntry(Entry& entry, Payload&& payload) {
-	if (!payload.mesh) {
+
+	 graphics::MeshData converted;
+	if(auto *path = std::get_if<std::filesystem::path>(&payload)) {
+		converted = ConvertMeshToLayout(MeshLoader::Load(*path), targetLayout);
+	}
+	else if(auto *meshShared = std::get_if<std::shared_ptr<const MeshData>>(&payload))  {
+		converted = ConvertMeshToLayout(**meshShared, targetLayout);
+	}
+	else {
 		return { false, "Mesh payload expired" };
 	}
 
-	// Outline of the eventual upload flow.
 	// 1. Convert incoming mesh to the target layout so that vertex buffers
 	//    are already flattened and attributes match shader expectations.
-	auto converted = ConvertMeshToLayout(*payload.mesh, targetLayout);
 	auto streams = converted.GetUniqueStreams();
 	if(streams.empty() || converted.GetIndexCount() == 0) {
 		return {false, "Empty mesh object"};
@@ -65,7 +72,7 @@ std::pair<bool, std::string> GpuGeometryAtlasBackend::UploadEntry(Entry& entry, 
 	indexBuffer.UpdateBuffer(indexTargetOffset, indexMeshBuffer.Memory<void const*>(), indexByteSize);
 
 	// 6. Copy section metadata or other entry bookkeeping as required.
-	// TODO: Figure out if sections are needed (they are mostly material related sections, which means gpu pipeline changes - thus likely not supported by atlas)
+	// TODO: Figure out if sections are needed (they are mostly material related sections, which means gpu pipeline changes - thus likely not supported by backend)
 
 	return { true, {} };
 }

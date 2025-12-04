@@ -6,10 +6,12 @@
 #include "weave/system/memory/RangeAllocator.h"
 
 #include <atomic>
+#include <filesystem>
 #include <memory>
 #include <mutex>
 #include <string>
 #include <utility>
+#include <variant>
 
 namespace weave::graphics::gl::gpu {
 
@@ -22,9 +24,10 @@ public:
         uint32_t indexCount = 0;
     };
 
-    struct Payload {
-        std::shared_ptr<const graphics::MeshData> mesh;
-    };
+    using Payload = std::variant<
+            std::shared_ptr<const graphics::MeshData>,
+            std::filesystem::path>;
+
 
     explicit GpuGeometryAtlasBackend(graphics::MeshLayout layout);
 

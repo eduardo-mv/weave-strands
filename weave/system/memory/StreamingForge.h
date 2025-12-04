@@ -28,24 +28,24 @@ namespace weave::system::memory {
  *   StreamingResult UploadEntry(Entry& entry, Payload&& payload);
  *   StreamingResult RemoveEntry(Entry& entry);
  */
-template<typename AtlasType>
-concept Atlas = requires(
-    AtlasType& atlas,
-    typename AtlasType::Entry& entry,
-    typename AtlasType::Payload& payload) {
+template<typename Backend>
+concept ForgeBackend = requires(
+    Backend& backend,
+    typename Backend::Entry& entry,
+    typename Backend::Payload& payload) {
     
-    typename AtlasType::Entry;
-    typename AtlasType::Payload;
+    typename Backend::Entry;
+    typename Backend::Payload;
 
-    { atlas.UploadEntry(entry, std::move(payload)) } -> std::convertible_to<std::pair<bool, std::string>>;
-    { atlas.RemoveEntry(entry) } -> std::convertible_to<std::pair<bool, std::string>>;
+    { backend.UploadEntry(entry, std::move(payload)) } -> std::convertible_to<std::pair<bool, std::string>>;
+    { backend.RemoveEntry(entry) } -> std::convertible_to<std::pair<bool, std::string>>;
 };
 
-template<Atlas AtlasType>
+template<ForgeBackend Backend>
 class StreamingForge {
 public:
-    using Entry = typename AtlasType::Entry;
-    using Payload = typename AtlasType::Payload;
+    using Entry = typename Backend::Entry;
+    using Payload = typename Backend::Payload;
 
     struct Handle {
         uint64_t value = InvalidValue;
@@ -92,8 +92,8 @@ public:
         Unknown
     };
 
-    StreamingForge(AtlasType &atlas)
-        :atlas(atlas) {
+    StreamingForge(Backend &backend)
+        :backend(backend) {
     }
 
     ~StreamingForge() = default;
@@ -280,7 +280,7 @@ private:
     StreamingTask ClaimStreamingTask(std::chrono::milliseconds blockTimeout) {
         while (true) {
             std::unique_lock lock(streamingMutex);
-            if (!WaitForTask(lock, streamingCv, streamingQueue, blockTimeout)) {
+            if (!WaitForTask(lock, blockTimeout)) {
                 return {};
             }
 
@@ -336,7 +336,7 @@ private:
         auto payload = std::move(*task.payload);
         task.payload.reset();
 
-        std::tie(result.success, result.errorMessage) = atlas.UploadEntry(entryPtr->info, std::move(payload));
+        std::tie(result.success, result.errorMessage) = backend.UploadEntry(entryPtr->info, std::move(payload));
         StreamingResult deliver = result;
         FulfillPromise(task.promise, std::move(deliver));
         return result.success;
@@ -352,7 +352,7 @@ private:
             return false;
         }
 
-        std::tie(result.success, result.errorMessage) = atlas.RemoveEntry(entryPtr->info);
+        std::tie(result.success, result.errorMessage) = backend.RemoveEntry(entryPtr->info);
         ReleaseEntry(task.handle.Slot());
         StreamingResult deliver = result;
         FulfillPromise(task.promise, std::move(deliver));
@@ -376,12 +376,8 @@ private:
         }
     }
 
-    template<typename Queue>
-    static bool WaitForTask(std::unique_lock<std::mutex>& lock,
-                            std::condition_variable& cv,
-                            Queue& queue,
-                            std::chrono::milliseconds timeout) {
-        if (!queue.empty()) {
+    bool WaitForTask(std::unique_lock<std::mutex>& lock, std::chrono::milliseconds timeout) {
+        if (!streamingQueue.empty()) {
             return true;
         }
 
@@ -390,14 +386,14 @@ private:
         }
 
         if (timeout == std::chrono::milliseconds::max()) {
-            cv.wait(lock, [&queue]() { return !queue.empty(); });
+            streamingCv.wait(lock, [&]() { return !streamingQueue.empty(); });
             return true;
         }
 
-        return cv.wait_for(lock, timeout, [&queue]() { return !queue.empty(); });
+        return streamingCv.wait_for(lock, timeout, [&]() { return !streamingQueue.empty(); });
     }
 
-    AtlasType& atlas;
+    Backend& backend;
     std::vector<EntryRecord> entries;
     std::vector<uint32_t> freeSlots;
 

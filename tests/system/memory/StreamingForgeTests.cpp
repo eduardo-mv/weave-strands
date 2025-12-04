@@ -40,33 +40,33 @@ using DummyStreamingAtlas = wsm::StreamingForge<DummyStreamingAtlasBackend>;
 TestReport TestStreamingForge() {
 	TestReport report;
 	DummyStreamingAtlasBackend atlasBackend;
-	DummyStreamingAtlas atlas(atlasBackend);
+	DummyStreamingAtlas backend(atlasBackend);
 
-	auto ticket = atlas.StreamPayload({42});
+	auto ticket = backend.StreamPayload({42});
 	report.Expect(ticket.Valid(), "Streaming ticket should be valid");
-	report.Expect(atlas.QueryStreamingStatus(ticket.handle) == DummyStreamingAtlas::StreamStatus::Pending,
+	report.Expect(backend.QueryStreamingStatus(ticket.handle) == DummyStreamingAtlas::StreamStatus::Pending,
 		"Handle should report pending prior to processing");
 
-	atlas.ProcessStreamingQueue(0, std::chrono::milliseconds::zero());
+	backend.ProcessStreamingQueue(0, std::chrono::milliseconds::zero());
 
 	auto uploadResult = ticket.future.get();
 	report.Expect(uploadResult.success, "Upload result should be successful");
 	report.Expect(atlasBackend.uploadCount == 1, "Upload callback should have fired exactly once");
 
-	auto entry = atlas.QueryEntry(ticket.handle);
+	auto entry = backend.QueryEntry(ticket.handle);
 	report.Expect(entry.has_value(), "Entry should be available after upload");
 	report.Expect(entry->storedValue == 42, "Entry should reflect uploaded payload");
 
-	auto removeTicket = atlas.RemovePayload(ticket.handle);
+	auto removeTicket = backend.RemovePayload(ticket.handle);
 	report.Expect(removeTicket.Valid(), "Remove ticket should be valid");
 
-	atlas.ProcessStreamingQueue(0, std::chrono::milliseconds::zero());
+	backend.ProcessStreamingQueue(0, std::chrono::milliseconds::zero());
 
 	auto removeResult = removeTicket.future.get();
 	report.Expect(removeResult.success, "Removal result should be successful");
 	report.Expect(atlasBackend.removeCount == 1, "Remove callback should have fired exactly once");
 
-	auto removedEntry = atlas.QueryEntry(ticket.handle);
+	auto removedEntry = backend.QueryEntry(ticket.handle);
 	report.Expect(!removedEntry.has_value(), "Entry should no longer exist after removal");
 
 	return report;
