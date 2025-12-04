@@ -56,6 +56,10 @@ public:
 	// preserving the existing contents. No-op if additionalBytes == 0.
 	void GrowBuffer(size_t additionalBytes);
 
+	// Expands the underlying GL buffer if the provided size is bigger than the current size
+	// preserving the existing contents. No-op if additionalBytes == 0.
+	void GrowBufferToFit(size_t totalBytes);
+
 	void UpdateBuffer(void const* mem, size_t memSize, size_t minBufferIncrement = 1);
 	void UpdateBuffer(size_t internalOffset, void const* mem, size_t memSize, size_t minBufferIncrement = 1);
 

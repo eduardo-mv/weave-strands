@@ -80,9 +80,9 @@ TestReport TestParticleBuffer() {
 	report.Expect(std::to_integer<int>(std::get<0>(committedEditable[8]).value) == 10, "Committed FieldA last particle mismatch");
 	report.Expect(std::to_integer<int>(std::get<1>(committedEditable[8]).value) == 20, "Committed FieldB last particle mismatch");
 
-	auto activeSpan = buffer.ActiveSpan();
+	auto activeSpan = buffer.ActiveByteSpan();
 	report.Expect(activeSpan.size() == committedEditable.size(), "Active span size mismatch");
-	auto [firstByte] = activeSpan[0];
+	auto firstByte = activeSpan[0];
 	report.Expect(firstByte == std::get<0>(committedEditable[0]).value, "Active span first byte mismatch");
 
 	return report;

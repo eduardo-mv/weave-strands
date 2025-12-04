@@ -91,6 +91,13 @@ void Buffer::GrowBuffer(size_t additionalBytes) {
 	bufferByteSize = newSize;
 }
 
+void Buffer::GrowBufferToFit(size_t totalBytes) {
+	if(totalBytes > bufferByteSize) {
+		GrowBuffer(totalBytes - bufferByteSize);
+	}
+}
+
+
 void Buffer::BindToUniforms(GLuint gl_uniformBufferIndex) const {
 	if (gl_bufferId == 0) {
 		return;

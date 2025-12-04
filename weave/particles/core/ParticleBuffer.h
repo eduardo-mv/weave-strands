@@ -63,6 +63,12 @@ public:
         return deref(data + i * stride, std::index_sequence_for<Types...>{});
     }
 
+	template<typename T>
+	requires std::is_trivially_copyable_v<T>
+	operator std::span<const T>() const noexcept {
+    	return { data, particleCount * stride / sizeof(T) };
+	}
+
 private:
     template<size_t... I>
     auto deref(std::byte* base, std::index_sequence<I...>) const {
@@ -109,11 +115,11 @@ public:
 		return { begin, end, layout.particleByteSize, layout.GetOffsets<Types...>() };
 	}
 
-	particle_span<const std::byte> ActiveSpan(size_t offsetItems = 0) {
+	std::span<const std::byte> ActiveByteSpan(size_t offsetItems = 0) const {
 		auto *begin = memoryBuffer.data() + offsetItems * layout.particleByteSize;
 		auto *end = memoryBuffer.data() + editableEndOffset;
 
-		return particle_span<const std::byte>{ begin, end, layout.particleByteSize, ParticleOffsetArray<std::byte>{0} };
+		return { begin, end };
 	}
 
 	template<typename ...Types>
