@@ -41,7 +41,7 @@ public:
     void ReserveParticles(size_t particleCount);
 
     size_t ParticleStride() const { return particleStride; }
-    weave::opengl::Buffer const& GetReadSnapshot() const;
+    std::pair<weave::opengl::Buffer const&, size_t> GetReadSnapshot() const;
     void ConsumeReadSnapshot();
 
 private:

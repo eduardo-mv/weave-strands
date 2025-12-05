@@ -293,6 +293,26 @@ public:
 		return ptr;
 	}
 
+	template<int inputNum, typename NodeType>
+	auto ExposeInput(NodeType* node, std::string const& inputName) {
+		if constexpr (inputNum >= node->input.GetInputCount()) {
+			return std::shared_ptr<void>{};
+		}
+		else {
+			auto ptr = node->input.template SharedPtr<inputNum>();
+			auto ioNum = ioInterface.RegisterInput(ptr);
+			nameManager.RegisterUniqueInputName(ioNum, inputName);
+			return ptr;
+		}
+	}
+
+	template<typename Type, typename NodeType>
+	auto ExposeInput(NodeType* node, std::string const& inputName) {
+		auto ptr = node->input.template SharedPtr<Type>();
+		auto ioNum = ioInterface.RegisterInput(ptr);
+		nameManager.RegisterUniqueInputName(ioNum, inputName);
+		return ptr;
+	}
 
 
 	bool Connect(Connection const& connection) {

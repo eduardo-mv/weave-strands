@@ -73,6 +73,7 @@ if(WEAVE_BUILD_DEMO)
             WeavePlatformLib
             WeaveAnimationLib
             WeaveInputLib
+            WeaveParticlesGlLib
             WeaveParticlesLib
             WeaveSceneLib
             WeaveSceneGraphLib
@@ -90,6 +91,7 @@ if(WEAVE_BUILD_DEMO)
                 WeavePlatformLib
                 WeaveAnimationLib
                 WeaveInputLib
+                WeaveParticlesGlLib
                 WeaveParticlesLib
                 WeaveSceneLib
                 WeaveSceneGraphLib

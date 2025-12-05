@@ -35,12 +35,19 @@ void ParticleBuffer::KillParticles(uint64_t offsetStart, uint64_t amount)
 
 void ParticleBuffer::CommitEmittedParticles()
 {
-	// Particles in the emission section are moved to be packed tightly against the last editable particle, then the buffer is resized downwards
 	auto difference = emissionStartOffset - editableEndOffset;
-	if (difference > 0) {
-		//std::copy(memoryBuffer.data() + emissionStartOffset, memoryBuffer.data() + std::ptrdiff_t(memoryBuffer.size()), memoryBuffer.data() + editableEndOffset);
-		std::memcpy(memoryBuffer.data() + editableEndOffset, memoryBuffer.data() + std::ptrdiff_t(memoryBuffer.size() - difference), difference);
-	}
+    if (difference > 0) {
+        const size_t gapBytes = static_cast<size_t>(difference);
+        const size_t emissionBytes = memoryBuffer.size() - static_cast<size_t>(emissionStartOffset);
+        if (emissionBytes > 0) {
+            auto* dest = memoryBuffer.data() + editableEndOffset;
+            auto* src = memoryBuffer.data() + emissionStartOffset;
+            const size_t copyBytes = std::min(gapBytes, emissionBytes);
+            if (copyBytes > 0) {
+                std::memcpy(dest, src, copyBytes);
+            }
+        }
+    }
 
 	memoryBuffer.resize(memoryBuffer.size() - difference);
 

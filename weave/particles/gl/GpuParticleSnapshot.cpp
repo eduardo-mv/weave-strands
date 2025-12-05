@@ -41,7 +41,7 @@ void GpuParticleSnapshot::ReserveParticles(size_t particleCount) {
     backend.ReserveParticles(particleCount);
 }
 
-weave::opengl::Buffer const& GpuParticleSnapshot::GetReadSnapshot() const {
+std::pair<weave::opengl::Buffer const&, size_t> GpuParticleSnapshot::GetReadSnapshot() const {
     return backend.GetReadSnapshot();
 }
 

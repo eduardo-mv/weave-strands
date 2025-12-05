@@ -72,9 +72,13 @@ public:
 	}
 
 
-	template <typename T>
-	size_t RegisterInput() {
-		return InsertPtr(inputs, CreateInputStorage<T>());
+	template<typename T>
+	size_t RegisterInput(std::shared_ptr<T> ptr) {
+		return RegisterInput(std::pair{ std::type_index{typeid(T)}, ptr });
+	}
+
+	size_t RegisterInput(std::pair<std::type_index, std::shared_ptr<void>> ptr) {
+		return InsertPtr(inputs, std::move(ptr));
 	}
 
 	bool RemoveInput(size_t index) {
@@ -239,6 +243,16 @@ public:
 	In(In&& other) noexcept = default;
 	In& operator=(In const& other) = default;
 	In& operator=(In&& other) noexcept = default;
+
+	template<size_t n>
+	auto SharedPtr() {
+		return std::get<n>(inputTuple).data;
+	}
+
+	template<typename T>
+	auto SharedPtr() {
+		return std::get<Input<T>>(inputTuple).data;
+	}
 
 	template<size_t n>
 	auto const& Ref() {

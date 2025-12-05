@@ -63,7 +63,7 @@ void GpuParticleSnapshotBackend::ReserveParticles(size_t particleCount) {
     ReserveBytes(bytes);
 }
 
-weave::opengl::Buffer const& GpuParticleSnapshotBackend::GetReadSnapshot() const { 
+std::pair<weave::opengl::Buffer const&, size_t> GpuParticleSnapshotBackend::GetReadSnapshot() const { 
     uint32_t readTarget = readSnapshotIndex.load(std::memory_order::acquire);
     uint32_t writeTarget = 0;
 
@@ -79,7 +79,10 @@ weave::opengl::Buffer const& GpuParticleSnapshotBackend::GetReadSnapshot() const
         std::this_thread::sleep_for(std::chrono::milliseconds(1));
     }
 
-    return storageBuffers[readTarget % storageBuffers.size()]; 
+    readTarget = readTarget % storageBuffers.size();
+    size_t particleCount = writeOffset[readTarget] / particleStride;
+
+    return { storageBuffers[readTarget], particleCount }; 
 }
 
 void GpuParticleSnapshotBackend::ConsumeReadSnapshot() {
@@ -96,13 +99,14 @@ std::pair<bool, std::string> GpuParticleSnapshotBackend::ProcessFence(Fence fenc
         uint32_t writeTarget = writeSnapshotIndex.fetch_add(1, std::memory_order::acquire);
         uint32_t readTarget = 0;
 
-        const auto nextWriteIndex = (writeTarget + 1) % storageBuffers.size();
-        writeOffset[nextWriteIndex] = 0;
+        const auto nextWriteIndex = writeTarget + 1;
+        const auto nextBuffer = nextWriteIndex % storageBuffers.size();
+        writeOffset[nextBuffer] = 0;
 
         while(true) {
             readTarget = readSnapshotIndex.load(std::memory_order::acquire);
 
-            if((writeTarget + 1) % storageBuffers.size() > readTarget % storageBuffers.size()) {
+            if(writeTarget != readTarget) {
                 break;
             }
 

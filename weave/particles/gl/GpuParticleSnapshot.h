@@ -30,7 +30,7 @@ public:
     void ReserveParticles(size_t particleCount);
 
     size_t ParticleStride() const { return backend.ParticleStride(); }
-    weave::opengl::Buffer const& GetReadSnapshot() const;
+    std::pair<weave::opengl::Buffer const&, size_t> GetReadSnapshot() const;
     void ConsumeReadSnapshot();
 
     Backend& BackendAccess() { return backend; }

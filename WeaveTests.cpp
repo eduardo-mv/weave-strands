@@ -30,6 +30,20 @@
 #include "weave/graphics/gl/resources/MeshUploader.h"
 #include "weave/graphics/gl/resources/Buffer.h"
 #include "weave/graphics/gl/gpu/GpuGeometryAtlas.h"
+#include "weave/particles/core/ParticleBuffer.h"
+#include "weave/particles/core/ParticleLayout.h"
+#include "weave/particles/core/ParticleMachine.h"
+#include "weave/particles/core/nodes/CommitEmissionNode.h"
+#include "weave/particles/core/nodes/ParticleAgingSim.h"
+#include "weave/particles/core/nodes/ParticleEmitter.h"
+#include "weave/particles/core/nodes/ParticlePhysicsInit.h"
+#include "weave/particles/core/nodes/ParticlePhysicsSim.h"
+#include "weave/particles/core/nodes/ParticleSphereInit.h"
+#include "weave/particles/core/nodes/ParticleTransformInit.h"
+#include "weave/particles/core/nodes/ParticleVelocityInit.h"
+#include "weave/particles/gl/GpuParticleSnapshot.h"
+#include "weave/system/math/Transform.h"
+#include "weave/system/math/VectorMath.h"
 
 
 
@@ -618,6 +632,165 @@ void main() {
         }
     }
 
+    namespace wp = weave::particles;
+    namespace wpgl = weave::particles::gl;
+    using weave::Transform;
+    using weave::Vector3;
+
+    constexpr size_t kMaxDemoParticles = 2048000000;
+    constexpr size_t kReserveParticles = 10000;
+
+    wp::ParticleLayout particleLayout = wp::ParticleLayout::BuildStdParticleLayout();
+    wp::ParticleBuffer particleBuffer(0, particleLayout);
+    wp::ParticleMachine particleMachine;
+    particleMachine.AddBuffer(particleBuffer);
+
+    wpgl::GpuParticleSnapshot particleSnapshot(particleLayout.particleByteSize);
+    particleSnapshot.ReserveParticles(kReserveParticles);
+
+    auto emitterNode = particleMachine.Graph().CreateNode<wp::ParticleEmitter>();
+    emitterNode->input.SetDefaultValue<wp::ParticleEmitter::MinEmit>(1.0f);
+    emitterNode->input.SetDefaultValue<wp::ParticleEmitter::MaxEmit>(5.0f);
+    emitterNode->input.SetDefaultValue<wp::ParticleEmitter::Rate>(4.0f);
+    emitterNode->input.SetDefaultValue<wp::ParticleEmitter::MinFrequency>(0.0f);
+    emitterNode->input.SetDefaultValue<wp::ParticleEmitter::MaxFrequency>(0.02f);
+    emitterNode->input.SetDefaultValue<wp::ParticleEmitter::MaxRuntime>(-1.0);
+    emitterNode->input.SetDefaultValue<wp::ParticleEmitter::MaxParticles>(kMaxDemoParticles);
+
+    auto sphereInitNode = particleMachine.Graph().CreateNode<wp::ParticleSphereInit>();
+    sphereInitNode->input.SetDefaultValue<wp::ParticleSphereInit::MinRadius>(0.0f);
+    sphereInitNode->input.SetDefaultValue<wp::ParticleSphereInit::MaxRadius>(0.15f);
+    sphereInitNode->input.SetDefaultValue<wp::ParticleSphereInit::Alpha>(weave::algebra::F_2PI);
+    sphereInitNode->input.SetDefaultValue<wp::ParticleSphereInit::Beta>(weave::algebra::F_2PI);
+    sphereInitNode->SetAlphaHemisphere(true);
+
+    auto velocityInitNode = particleMachine.Graph().CreateNode<wp::ParticleVelocityInit>();
+    velocityInitNode->input.SetDefaultValue<wp::ParticleVelocityInit::Direction>(Vector3{0.0f, 1.0f, 0.0f});
+    velocityInitNode->input.SetDefaultValue<wp::ParticleVelocityInit::UpAngle>(35.0f);
+    velocityInitNode->input.SetDefaultValue<wp::ParticleVelocityInit::SideAngle>(25.0f);
+    velocityInitNode->input.SetDefaultValue<wp::ParticleVelocityInit::MinVelocity>(0.4f);
+    velocityInitNode->input.SetDefaultValue<wp::ParticleVelocityInit::MaxVelocity>(1.1f);
+
+    auto physicsInitNode = particleMachine.Graph().CreateNode<wp::ParticlePhysicsInit>();
+    physicsInitNode->input.SetDefaultValue<wp::ParticlePhysicsInit::MinAgeInput>(0.8f);
+    physicsInitNode->input.SetDefaultValue<wp::ParticlePhysicsInit::MaxAgeInput>(2.8f);
+    physicsInitNode->input.SetDefaultValue<wp::ParticlePhysicsInit::MinMassInput>(0.2f);
+    physicsInitNode->input.SetDefaultValue<wp::ParticlePhysicsInit::MaxMassInput>(1.0f);
+
+    auto transformInitNode = particleMachine.Graph().CreateNode<wp::ParticleTransformInit>();
+    
+    auto commitNode = particleMachine.Graph().CreateNode<wp::CommitEmissionNode>();
+    auto agingNode = particleMachine.Graph().CreateNode<wp::ParticleAgingSim>();
+    agingNode->input.SetDefaultValue<wp::ParticleAgingSim::RadiusInput>(-1.0f);
+    agingNode->input.SetDefaultValue<wp::ParticleAgingSim::AgingMultiplierInput>(1.0f);
+
+    auto physicsSimNode = particleMachine.Graph().CreateNode<wp::ParticlePhysicsSim>();
+    physicsSimNode->input.SetDefaultValue<wp::ParticlePhysicsSim::LinearDamping>(0.985f);
+    physicsSimNode->input.SetDefaultValue<wp::ParticlePhysicsSim::Gravity>(Vector3{0.0f, -1.5f, 0.0f});
+
+    particleMachine.Graph().AddRootTrigger(emitterNode);
+    emitterNode->ConnectTrigger(sphereInitNode);
+    sphereInitNode->ConnectTrigger(velocityInitNode);
+    velocityInitNode->ConnectTrigger(physicsInitNode);
+    physicsInitNode->ConnectTrigger(transformInitNode);
+    transformInitNode->ConnectTrigger(commitNode);
+
+    particleMachine.Graph().AddRootTrigger(agingNode);
+    agingNode->ConnectTrigger(physicsSimNode);
+
+    std::shared_ptr<Transform> emitterTransform;
+    emitterTransform = particleMachine.Graph().ExposeInput<wp::ParticleTransformInit::TransformInput>(transformInitNode, "transform");
+
+    weave::opengl::Program particleProgram;
+    GLuint particleVao = 0;
+    gl::CreateVertexArrays(1, &particleVao);
+    constexpr GLuint kParticleSsboBinding = 7;
+    {
+        static constexpr char const* particleVertexSrc = R"(
+#version 450 core
+layout(std430, binding = 7) readonly buffer ParticleAttributes {
+    float particleData[];
+};
+
+uniform uint uStrideFloats;
+uniform uint uPositionOffsetFloats;
+uniform uint uLifeOffsetFloats;
+uniform uint uMaxLifeOffsetFloats;
+uniform float uWorldScale;
+uniform float uPointSize;
+uniform float uTime;
+uniform vec3 uColorA;
+uniform vec3 uColorB;
+
+out VS_OUT {
+    float lifeRatio;
+    vec3 color;
+} vs_out;
+
+void main() {
+    uint baseIndex = uint(gl_VertexID) * uStrideFloats;
+    vec3 position = vec3(
+        particleData[baseIndex + uPositionOffsetFloats + 0],
+        particleData[baseIndex + uPositionOffsetFloats + 1],
+        particleData[baseIndex + uPositionOffsetFloats + 2]
+    );
+    float life = particleData[baseIndex + uLifeOffsetFloats];
+    float maxLife = max(particleData[baseIndex + uMaxLifeOffsetFloats], 0.0001);
+    float t = clamp(life / maxLife, 0.0, 1.0);
+
+    vec3 pulseColor = mix(uColorA, uColorB, 0.5 + 0.5 * sin(uTime * 0.35));
+    vs_out.color = mix(pulseColor, vec3(1.0), t * 0.35);
+    vs_out.lifeRatio = t;
+
+    vec3 projected = vec3(position.xy * uWorldScale, position.z);
+    gl_Position = vec4(projected, 1.0);
+    gl_PointSize = uPointSize * (1.0 - t * 0.5);
+}
+)";
+
+        static constexpr char const* particleFragmentSrc = R"(
+#version 450 core
+layout(location = 0) out vec4 outColor;
+
+in VS_OUT {
+    float lifeRatio;
+    vec3 color;
+} fs_in;
+
+void main() {
+    vec2 uv = gl_PointCoord * 2.0 - 1.0;
+    float dist = dot(uv, uv);
+    if (dist > 1.0) {
+        discard;
+    }
+
+    float falloff = smoothstep(1.0, 0.0, dist);
+    float alpha = falloff * (1.0 - fs_in.lifeRatio * 0.65);
+    outColor = vec4(fs_in.color, alpha);
+}
+)";
+
+        auto particleVs = weave::opengl::ShaderLoader::BuildSource(gl::VERTEX_SHADER, particleVertexSrc);
+        auto particleFs = weave::opengl::ShaderLoader::BuildSource(gl::FRAGMENT_SHADER, particleFragmentSrc);
+        particleProgram.LinkProgram({ particleVs.GLId(), particleFs.GLId() });
+    }
+
+    const size_t particleStrideBytes = particleLayout.particleByteSize;
+    const uint32_t particleStrideFloats = static_cast<uint32_t>(particleStrideBytes / sizeof(float));
+    const uint32_t positionOffsetFloats = static_cast<uint32_t>(particleLayout.GetOffset<wp::layout::Position>() / sizeof(float));
+    const uint32_t lifeOffsetFloats = static_cast<uint32_t>(particleLayout.GetOffset<wp::layout::LifeTime>() / sizeof(float));
+    const uint32_t maxLifeOffsetFloats = static_cast<uint32_t>(particleLayout.GetOffset<wp::layout::MaxLifeTime>() / sizeof(float));
+
+    particleProgram.UploadUniformValue("uStrideFloats", particleStrideFloats);
+    particleProgram.UploadUniformValue("uPositionOffsetFloats", positionOffsetFloats);
+    particleProgram.UploadUniformValue("uLifeOffsetFloats", lifeOffsetFloats);
+    particleProgram.UploadUniformValue("uMaxLifeOffsetFloats", maxLifeOffsetFloats);
+
+    float particleWorldScale = 0.4f;
+    float particlePointSize = 14.0f;
+    uint64_t particleIteration = 0;
+    float particleTimeSeconds = 0.0f;
+
     weave::time::FrameTracker frameTracker;
     weave::time::IntervalTracker interval;
     weave::time::Clock clock1, clock2;
@@ -631,6 +804,22 @@ void main() {
         clock1.Increment(delta);
         clock2.Increment(delta);
 		const float deltaSeconds = std::chrono::duration<float>(delta).count();
+
+        particleTimeSeconds += deltaSeconds;
+        ++particleIteration;
+
+        const float orbit = particleTimeSeconds * 0.45f;
+        const float height = std::sin(particleTimeSeconds * 0.9f) * 0.35f;
+        emitterTransform->SetPosition(Vector3{ std::cos(orbit) * 0.6f, height, 0.0f });
+
+        particleMachine.SetSamplingData(deltaSeconds, particleIteration, true);
+        particleMachine.Execute();
+
+        wpgl::GpuParticleSnapshot::ParticleSpan span{ particleBuffer.ActiveByteSpan(), particleBuffer.GetParticleByteSize() };
+        particleSnapshot.UploadParticleSpan(span);
+        particleSnapshot.CommitSnapshot();
+        particleSnapshot.ProcessStreamingQueue(0, std::chrono::milliseconds::zero());
+        particleSnapshot.ConsumeReadSnapshot();
 
         if (clock1.tickDelta) {
             std::cout << std::format("\nFPS: {} - Jitter: {}", 1.0 / frameTracker.avgFrameTime.count(), frameTracker.avgJitter.count());
@@ -675,6 +864,32 @@ void main() {
                 }
                 ::gl::BindVertexArray(0);
             }
+        }
+
+        {
+            auto colorA = HslToRgb(std::fmod(particleTimeSeconds * 0.12f, 1.0f), 0.65f, 0.55f);
+            auto colorB = HslToRgb(std::fmod(0.35f + particleTimeSeconds * 0.12f, 1.0f), 0.85f, 0.45f);
+
+            particleProgram.Use();
+            particleProgram.UploadUniformValue("uWorldScale", particleWorldScale);
+            particleProgram.UploadUniformValue("uPointSize", particlePointSize);
+            particleProgram.UploadUniformValue("uTime", particleTimeSeconds);
+            particleProgram.UploadUniformValue("uColorA", colorA.data());
+            particleProgram.UploadUniformValue("uColorB", colorB.data());
+
+            auto [particleSsbo, particleCount] = particleSnapshot.GetReadSnapshot();
+            particleSsbo.BindToShader(kParticleSsboBinding);
+
+            gl::Disable(gl::DEPTH_TEST);
+            gl::Enable(gl::PROGRAM_POINT_SIZE);
+            gl::Enable(gl::BLEND);
+            gl::BlendFunc(gl::SRC_ALPHA, gl::ONE);
+            gl::BindVertexArray(particleVao);
+            gl::DrawArrays(gl::POINTS, 0, static_cast<GLsizei>(particleCount));
+            gl::BindVertexArray(0);
+            gl::Disable(gl::BLEND);
+            gl::Enable(gl::DEPTH_TEST);
+
         }
 
 		std::array<InputEffectSharedState::MidiBar, InputEffectSharedState::kBarCount> barsSnapshot;
