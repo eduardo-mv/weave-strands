@@ -18,14 +18,14 @@ Vector3 TurbulenceComponent(Vector3 const& dir, Vector3 const& velocity) {
 }
 } // namespace
 
-	ParticleTurbulenceSim::ParticleTurbulenceSim() {
-		this->input.SetDefaultValues(
-			Transform{},
-			TurbulenceFieldList{},
- 			-1.0f, // radius
- 			1.0f   // decay
- 		);
- 	}
+ParticleTurbulenceSim::ParticleTurbulenceSim() {
+	this->input.SetDefaultValues(
+		Transform{},
+		blender::TurbulenceFieldList{},
+		-1.0f, // radius
+		1.0f   // decay
+	);
+}
 
 void ParticleTurbulenceSim::ExecuteNode() {
 	auto& context = GetContext();
@@ -45,7 +45,7 @@ void ParticleTurbulenceSim::ExecuteNode() {
 	ApplyTurbulence(fieldList, transform, radiusInput, decayInput);
 }
 
-void ParticleTurbulenceSim::ApplyTurbulence(TurbulenceFieldList const& fields, Transform const& transform,
+void ParticleTurbulenceSim::ApplyTurbulence(blender::TurbulenceFieldList const& fields, Transform const& transform,
 	float radiusInput, float decayInput) {
 	auto& context = GetContext();
 
@@ -90,7 +90,7 @@ void ParticleTurbulenceSim::ApplyTurbulence(TurbulenceFieldList const& fields, T
 				}
 			}
 
-			const TurbulenceField& field = fields[fieldIndex % fields.size()];
+			const blender::TurbulenceField& field = fields[fieldIndex % fields.size()];
 			Vector3 worldDir = transform.GetTransformMatrix().TransformNormal(field.direction);
 			Vector3 turbulence = TurbulenceComponent(worldDir, vel);
 			appliedForce += turbulence * (field.forceMagnitude * speed * factor);

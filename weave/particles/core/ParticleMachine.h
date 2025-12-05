@@ -4,6 +4,7 @@
 #include <vector>
 
 #include "weave/system/blender/Blender.h"
+#include "weave/system/blender/GraphTime.h"
 
 namespace weave::particles {
 
@@ -37,7 +38,7 @@ public:
 private:
 	blender::Blender blenderGraph;
 	std::shared_ptr<ParticleContext> context;
+	std::shared_ptr<blender::GraphTime> graphTime;
 };
 
 } // namespace weave::particles
-

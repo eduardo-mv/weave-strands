@@ -1,7 +1,7 @@
 #include "tests/TestEntryPoints.h"
 
 #include "weave/system/blender/Blender.h"
-#include "weave/particles/core/nodes/ArithmeticNodes.h"
+#include "weave/system/blender/nodes/ArithmeticNodes.h"
 #include "weave/animation/blender/samplers/DataClipSampler.h"
 #include "weave/animation/blender/samplers/SignalSampler.h"
 #include "weave/system/math/Interpolation.h"

@@ -1,20 +1,14 @@
 #pragma once
 
 #include "weave/system/math/Transform.h"
+#include "weave/system/blender/nodes/TurbulenceFieldTypes.h"
 
 #include "weave/particles/core/nodes/ParticleNode.h"
 
 namespace weave::particles {
 
-struct TurbulenceField {
-	Vector3 direction;
-	float forceMagnitude{ 0.0f };
-};
-
-using TurbulenceFieldList = std::vector<TurbulenceField>;
-
 class ParticleTurbulenceSim : public ParticleNode<
-	blender::In<Transform, TurbulenceFieldList, float, float>,
+	blender::In<Transform, blender::TurbulenceFieldList, float, float>,
 	blender::Out<>> {
 public:
 	ParticleTurbulenceSim();
@@ -29,7 +23,7 @@ public:
 	};
 
 private:
-	void ApplyTurbulence(TurbulenceFieldList const& fields, Transform const& transform,
+	void ApplyTurbulence(blender::TurbulenceFieldList const& fields, Transform const& transform,
 		float radiusInput, float decayInput);
 };
 

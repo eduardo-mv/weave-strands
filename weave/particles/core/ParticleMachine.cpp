@@ -6,6 +6,7 @@ namespace weave::particles {
 
 ParticleMachine::ParticleMachine() {
 	context = blenderGraph.GetUniform<ParticleContext>();
+	graphTime = blenderGraph.GetUniform<blender::GraphTime>();
 }
 
 ParticleMachine::~ParticleMachine() = default;
@@ -34,6 +35,10 @@ void ParticleMachine::SetSamplingData(float deltaTime, uint64_t iteration, bool 
 	context->sampling.deltaTime = deltaTime;
 	context->sampling.iteration = iteration;
 	context->sampling.isVisible = isVisible;
+	if (graphTime) {
+		graphTime->deltaSeconds = deltaTime;
+		graphTime->totalSeconds += static_cast<double>(deltaTime);
+	}
 }
 
 void ParticleMachine::Execute() {
@@ -41,4 +46,3 @@ void ParticleMachine::Execute() {
 }
 
 } // namespace weave::particles
-
