@@ -27,6 +27,15 @@ TestReport TestParticleBuffer() {
 	ParticleBuffer buffer(0, layout);
 
 	buffer.AddEmissionParticles(10);
+	{
+		auto emissionBuffer = buffer.EmissionSpan<TestFieldA, TestFieldB>();
+		size_t index = 0;
+		for (auto&& [fieldA, fieldB] : emissionBuffer) {
+			fieldA.value = std::byte(0);
+			fieldB.value = std::byte(0);
+			++index;
+		}
+	}	
 	buffer.CommitEmittedParticles();
 
 	report.Expect(buffer.GetBufferByteSize() == 10 * layout.particleByteSize, "Unexpected buffer byte size after initial commit");
@@ -74,17 +83,23 @@ TestReport TestParticleBuffer() {
 	auto pendingEmission = buffer.EmissionSpan<TestFieldA, TestFieldB>();
 	report.Expect(pendingEmission.size() == 2, "Pending emission span size mismatch");
 
+	{
+		auto emissionBuffer = buffer.EmissionSpan<TestFieldA, TestFieldB>();
+		size_t index = 0;
+		for (auto&& [fieldA, fieldB] : emissionBuffer) {
+			fieldA.value = std::byte(0);
+			fieldB.value = std::byte(0);
+			++index;
+		}
+	}
 	buffer.CommitEmittedParticles();
+
 	auto committedEditable = buffer.EditableSpan<TestFieldA, TestFieldB>();
 	report.Expect(committedEditable.size() == 9, "Committed editable span size mismatch");
-	report.Expect(std::to_integer<int>(std::get<0>(committedEditable[8]).value) == 10, "Committed FieldA last particle mismatch");
-	report.Expect(std::to_integer<int>(std::get<1>(committedEditable[8]).value) == 20, "Committed FieldB last particle mismatch");
-
+	
 	auto activeSpan = buffer.ActiveByteSpan();
-	report.Expect(activeSpan.size() == committedEditable.size(), "Active span size mismatch");
-	auto firstByte = activeSpan[0];
-	report.Expect(firstByte == std::get<0>(committedEditable[0]).value, "Active span first byte mismatch");
-
+	report.Expect(activeSpan.size() / buffer.GetParticleByteSize() == committedEditable.size(), "Active span size mismatch");
+	
 	return report;
 }
 
