@@ -40,10 +40,6 @@ public:
 		this->input.SetDefaultValues(1.0f, 0.0f, 0.0f, 1.0f, 1.0f, 0.0f, 1.0f);
 	}
 
-	void SetCurve(weave::easing::EasingCurve fn) {
-		curve = std::move(fn);
-	}
-
 	void ExecuteNode() override {
 		GraphTime const& samplingTime = this->uniform.Ref<0>();
 		const float timeScale = this->input.template Ref<TimeScaleInput>();

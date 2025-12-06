@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Loom Blender Graph Authoring Tool</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<header class="app-header">
+    <div>
+        <h1>Loom Blender</h1>
+        <p class="tagline">Visual authoring tool for Weave Blender graphs</p>
+    </div>
+    <div class="header-actions">
+        <button id="generateCodeBtn">Generate C++</button>
+        <button id="resetGraphBtn" class="secondary">Reset Graph</button>
+    </div>
+</header>
+<main class="app-layout">
+    <section class="panel palette" aria-label="Node Palette">
+        <h2>Nodes</h2>
+        <div id="paletteList" class="palette-list"></div>
+    </section>
+    <section class="panel canvas-panel" aria-label="Graph Canvas">
+        <div class="canvas-toolbar">
+            <div>
+                <strong>Canvas</strong>
+                <span id="canvasHint">Drag nodes to reposition. Use the inspector to connect them.</span>
+            </div>
+        </div>
+        <div id="graphCanvas" class="graph-canvas">
+            <svg id="connectionLayer" class="connection-layer" aria-hidden="true"></svg>
+            <div id="nodesLayer" class="nodes-layer"></div>
+        </div>
+    </section>
+    <section class="panel inspector" aria-label="Inspector">
+        <h2>Inspector</h2>
+        <div id="inspectorContent" class="inspector-content">
+            <p>Select a node to edit its properties.</p>
+        </div>
+    </section>
+</main>
+<section class="panel code-panel" aria-label="Generated Code">
+    <div class="code-panel-header">
+        <h2>C++ Output</h2>
+        <span>Copy &amp; paste into your Blender or ParticleMachine setup</span>
+    </div>
+    <textarea id="codeOutput" rows="12" readonly spellcheck="false"></textarea>
+</section>
+<script src="app.js"></script>
+</body>
+</html>
