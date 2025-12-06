@@ -45,6 +45,10 @@
 #include "weave/system/math/Transform.h"
 #include "weave/system/math/VectorMath.h"
 
+#include "weave/system/blender/nodes/ArithmeticNodes.h"
+#include "weave/system/blender/nodes/ConditionalNodes.h"
+#include "weave/system/blender/nodes/ConversionNodes.h"
+#include "weave/system/blender/nodes/EasingNodes.h"
 
 
 #include "weave/input/system/InputPipeline.h"
@@ -58,6 +62,7 @@
 #include "weave/input/win32/Win32MouseFeed.h"
 #include "weave/input/rawinput/RawInputGamepad.h"
 #include "weave/input/rawinput/RawInputKeyboardFeed.h"
+
 #include "weave/input/rawinput/RawInputMouseFeed.h"
 #else
 #include "weave/input/wayland/WaylandSeat.h"
@@ -656,6 +661,9 @@ void main() {
     emitterNode->input.SetDefaultValue<wp::ParticleEmitter::MaxFrequency>(0.02f);
     emitterNode->input.SetDefaultValue<wp::ParticleEmitter::MaxRuntime>(-1.0);
     emitterNode->input.SetDefaultValue<wp::ParticleEmitter::MaxParticles>(kMaxDemoParticles);
+
+    auto abs1 = particleMachine.Graph().CreateNode<weave::blender::AbsoluteNode<float>>();
+    abs1->input.SetDefaultValue<weave::blender::AbsoluteNode<float>::ValueInput>(0.0f);
 
     auto sphereInitNode = particleMachine.Graph().CreateNode<wp::ParticleSphereInit>();
     sphereInitNode->input.SetDefaultValue<wp::ParticleSphereInit::MinRadius>(0.0f);

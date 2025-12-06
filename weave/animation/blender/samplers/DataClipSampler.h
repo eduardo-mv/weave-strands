@@ -3,6 +3,7 @@
 #include "DataClip.h"
 #include "SamplingTime.h"
 #include "weave/system/blender/Blender.h"
+#include "weave/system/blender/GraphTime.h"
 #include "weave/system/memory/DataType.h"
 #include "weave/system/math/Interpolation.h"
 #include <algorithm>
@@ -14,10 +15,19 @@ namespace weave::blender::data {
 
 template<typename ...Types>
 class DataClipSampler : public BlenderNode<
-	Uniform<SamplingTime>,
+	Uniform<GraphTime>,
 	In<float, float>,
 	Out<Types...>>
 {
+public:
+	enum InputIndex : size_t {
+		TimeScaleInput,  // Playback speed multiplier
+		TimeOffsetInput  // Phase offset in seconds
+	};
+
+	enum OutputIndex : size_t {
+		ClipSampleOutput // Sampled clip channel value(s)
+	};
 
 private:
 	DataClipView clip;
@@ -50,21 +60,21 @@ public:
 	}
 
 	void ExecuteNode() override {
-		SamplingTime const& samplingTime = this->uniform.template Ref<0>();
-		float timeScale = this->input.template Ref<0>();
-		float timeOffset = this->input.template Ref<1>();
+		GraphTime const& samplingTime = this->uniform.template Ref<0>();
+		float timeScale = this->input.template Ref<TimeScaleInput>();
+		float timeOffset = this->input.template Ref<TimeOffsetInput>();
 			
 		// Adjust the offset to react to a time scaling change
 		if (timeScale != currentTimeScale) {
-			float localTimeCurrent = GlobalToLocalTime(clip.clipRangeLength, samplingTime.globalTimeStart, samplingTime.globalTimeNow, currentTimeScale, localTimeOffset + timeOffset, clipLoops);
-			float localTimeNew = GlobalToLocalTime(clip.clipRangeLength, samplingTime.globalTimeStart, samplingTime.globalTimeNow, timeScale, localTimeOffset + timeOffset, clipLoops);
+			float localTimeCurrent = GlobalToLocalTime(clip.clipRangeLength, static_cast<float>(samplingTime.totalSeconds), currentTimeScale, localTimeOffset + timeOffset, clipLoops);
+			float localTimeNew = GlobalToLocalTime(clip.clipRangeLength, static_cast<float>(samplingTime.totalSeconds), timeScale, localTimeOffset + timeOffset, clipLoops);
 
 			localTimeOffset += localTimeCurrent - localTimeNew;
 			currentTimeScale = timeScale;
 		}
 
 		// Get the local time from the current global time
-		float localTime = GlobalToLocalTime(clip.clipRangeLength, samplingTime.globalTimeStart, samplingTime.globalTimeNow, timeScale, localTimeOffset + timeOffset, clipLoops);
+		float localTime = GlobalToLocalTime(clip.clipRangeLength, static_cast<float>(samplingTime.totalSeconds), timeScale, localTimeOffset + timeOffset, clipLoops);
 
 		// Find the two frames between which the time value lies
 		float frameTime = clip->samplingRate * localTime;
@@ -74,7 +84,7 @@ public:
 		float u = frameTime - frameA;
 
 		size_t numSampleA = size_t(frameA) % clip->clipSamples;
-		size_t numSampleB = clip->nonLoopHoldFrame ? std::clamp(numSampleB, size_t(0), clip->clipSamples) : size_t(frameB) % clip->clipSamples;
+		size_t numSampleB = clip->nonLoopHoldFrame ? std::clamp(size_t(frameB), size_t(0), clip->clipSamples) : size_t(frameB) % clip->clipSamples;
 
 		SampleClipChannel<0>(clip, numSampleA, numSampleB, u);
 	}

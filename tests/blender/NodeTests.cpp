@@ -1,6 +1,7 @@
 #include "tests/TestEntryPoints.h"
 
 #include "weave/system/blender/Blender.h"
+#include "weave/system/blender/GraphTime.h"
 #include "weave/system/blender/nodes/ArithmeticNodes.h"
 #include "weave/animation/blender/samplers/DataClipSampler.h"
 #include "weave/animation/blender/samplers/SignalSampler.h"
@@ -62,13 +63,13 @@ struct MessageNode : BlenderNode<> {
 	}
 };
 
-class SineWaveNode : public BlenderNode<Uniform<SamplingTime>, Out<float>> {
+class SineWaveNode : public BlenderNode<Uniform<GraphTime>, Out<float>> {
 public:
 	SineWaveNode(float frequency, float amplitude)
 		: frequency(frequency), amplitude(amplitude) {}
 
 	void ExecuteNode() override {
-		float time = uniform.Ref<SamplingTime>().globalTimeNow;
+		float time = static_cast<float>(uniform.Ref<GraphTime>().totalSeconds);
 		this->output.Ref<0>() = amplitude * std::sin(2.0f * 3.14159265f * frequency * time);
 	}
 
@@ -294,19 +295,18 @@ TestReport TestNodes() {
 	{
 		Blender blender;
 
-		auto time = blender.GetUniform<SamplingTime>();
+		auto time = blender.GetUniform<GraphTime>();
 
 		auto data = CreateSingleChannelFloatDataClip();
 		auto* sampler = blender.CreateNode<DataClipSampler<float, float, int32_t>>(data, 0.0f);
-		auto* signal = blender.CreateNode<SignalSampler>(weave::easing::expInOut, 0.0f, 1.0f, 1.0f, 0.0f, true);
+		auto* signal = blender.CreateNode<SignalSampler>(weave::easing::expInOut);
 
 		auto add = blender.CreateNode<AddNode<float, float>>(1.0f, 1.0f);
 		add->ConnectInputTo<0, 0>(signal);
 		add->ConnectInputTo<1, 0>(sampler);
 
-		time->globalTimeStart = 0.0f;
-		time->globalTimeNow = 0.0f;
-		time->delta = 0.1f;
+		time->totalSeconds = 0.0;
+		time->deltaSeconds = 1.0f / 24.0f;
 
 		blender.AddRootTrigger(sampler);
 
@@ -368,12 +368,12 @@ TestReport TestNodes() {
 
 			std::this_thread::sleep_for(std::chrono::milliseconds(50));
 
-			time->globalTimeNow += 1.0f / 24.f;
+			time->totalSeconds += time->deltaSeconds;
 			*scaleControl -= 0.01f;
 		}
 
 		report.Expect(std::abs(lastSmooth - firstSmooth) > 1e-3f, "Smooth output did not change over time");
-		report.Expect(time->globalTimeNow > time->globalTimeStart, "Sampling time did not advance");
+		report.Expect(time->totalSeconds > 0.0, "Graph time did not advance");
 		report.Expect(*scaleControl < 2.0f, "Scale control was not updated");
 	}
 

@@ -1,7 +1,11 @@
 #pragma once
 
+#include <algorithm>
+#include <cstddef>
+
 #include "SamplingTime.h"
 #include "weave/system/blender/Blender.h"
+#include "weave/system/blender/GraphTime.h"
 #include "weave/system/memory/DataType.h"
 #include "weave/system/time/Clock.h"
 #include "weave/system/math/Easing.h"
@@ -12,57 +16,70 @@ namespace weave::blender::data {
 	using namespace weave::types;
 
 class SignalSampler : public BlenderNode<
-	Uniform<SamplingTime>,
-	In<float, float, float, float>,
+	Uniform<GraphTime>,
+	In<float, float, float, float, float, float, float>,
 	Out<float>>
 {
-
-private:
-	weave::easing::EasingCurve curve;
-	float signalLength = 1.0f;
-	float signalLoops = 0.0f;
-	float mirror = 1.0f; //A value of 2.0f will be used to mirror the curve's length
-		
-	float currentTimeScale = 1.0f;
-	float localTimeOffset = 0.0f;
-
 public:
-	SignalSampler(weave::easing::EasingCurve curve, float minValue = 0.0f, float maxValue = 1.0f, float signalLength = 1.0f, float signalLoops = 0.0f, bool doMirror = false)
-		: curve(std::move(curve))
-		, signalLength(signalLength)
-		, signalLoops(signalLoops)
-		, mirror(doMirror ? 2.0f : 1.0f) {
+	enum InputIndex : size_t {
+		TimeScaleInput,   // Playback speed multiplier
+		TimeOffsetInput,  // Phase offset applied before sampling (seconds)
+		MinValueInput,    // Lower interpolation bound
+		MaxValueInput,    // Upper interpolation bound
+		SignalLengthInput,// Duration of the easing segment (seconds)
+		SignalLoopsInput, // Number of loops before clamping (0 = infinite)
+		MirrorInput       // Mirror factor (1 = off, >1 mirrors the curve)
+	};
 
-		this->input.SetDefaultValues(1.0f, 0.0f, minValue, maxValue);
+	enum OutputIndex : size_t {
+		ResultOutput // Sampled easing value
+	};
+
+	explicit SignalSampler(weave::easing::EasingCurve curve = weave::easing::linear)
+		: curve(std::move(curve)) {
+		this->input.SetDefaultValues(1.0f, 0.0f, 0.0f, 1.0f, 1.0f, 0.0f, 1.0f);
+	}
+
+	void SetCurve(weave::easing::EasingCurve fn) {
+		curve = std::move(fn);
 	}
 
 	void ExecuteNode() override {
-		SamplingTime const& samplingTime = this->uniform.Ref<0>();
-		float timeScale = this->input.Ref<0>();
-		float timeOffset = this->input.Ref<1>();
-		float minValue = this->input.Ref<2>();
-		float maxValue = this->input.Ref<3>();
-			
+		GraphTime const& samplingTime = this->uniform.Ref<0>();
+		const float timeScale = this->input.template Ref<TimeScaleInput>();
+		const float timeOffset = this->input.template Ref<TimeOffsetInput>();
+		const float minValue = this->input.template Ref<MinValueInput>();
+		const float maxValue = this->input.template Ref<MaxValueInput>();
+		const float signalLength = std::max(this->input.template Ref<SignalLengthInput>(), 1e-4f);
+		const float signalLoops = this->input.template Ref<SignalLoopsInput>();
+		const float mirror = std::max(this->input.template Ref<MirrorInput>(), 1.0f);
+
 		// Adjust the offset to react to a time scaling change
 		if (timeScale != currentTimeScale) {
-			float localTimeCurrent = GlobalToLocalTime(signalLength, samplingTime.globalTimeStart, samplingTime.globalTimeNow, currentTimeScale, localTimeOffset + timeOffset, signalLoops);
-			float localTimeNew = GlobalToLocalTime(signalLength, samplingTime.globalTimeStart, samplingTime.globalTimeNow, timeScale, localTimeOffset + timeOffset, signalLoops);
+			const float localTimeCurrent = GlobalToLocalTime(signalLength, static_cast<float>(samplingTime.totalSeconds), currentTimeScale, localTimeOffset + timeOffset, signalLoops);
+			const float localTimeNew = GlobalToLocalTime(signalLength, static_cast<float>(samplingTime.totalSeconds), timeScale, localTimeOffset + timeOffset, signalLoops);
 
 			localTimeOffset += localTimeCurrent - localTimeNew;
 			currentTimeScale = timeScale;
 		}
 
 		// Get the local time from the current global time
-		float localTime = GlobalToLocalTime(signalLength * mirror, samplingTime.globalTimeStart, samplingTime.globalTimeNow, timeScale, localTimeOffset + timeOffset, signalLoops);
+		const float mirroredLength = signalLength * mirror;
+		float localTime = GlobalToLocalTime(mirroredLength, static_cast<float>(samplingTime.totalSeconds), timeScale, localTimeOffset + timeOffset, signalLoops);
 		localTime /= signalLength;
-		if (localTime > 1.0f) {
+		if (mirror > 1.0f && localTime > 1.0f) {
 			localTime = mirror - localTime;
 		}
 
 		// Sample the easing curve and use the value as interpolation factor between values
-		this->output.Ref<0>() = interpolation::lerp(minValue, maxValue, curve(localTime));
+		this->output.template Ref<ResultOutput>() = interpolation::lerp(minValue, maxValue, curve(localTime));
 
 	}
+
+private:
+	weave::easing::EasingCurve curve;
+	float currentTimeScale = 1.0f;
+	float localTimeOffset = 0.0f;
 };
 
 }
