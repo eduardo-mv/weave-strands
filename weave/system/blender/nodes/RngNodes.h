@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstddef>
 #include <vector>
 
 #include "weave/system/blender/Blender.h"
@@ -93,6 +94,15 @@ class RandomRangeNode : public BlenderNode<
     In<Type, Type>,
     Out<Type>> {
 public:
+    enum InputIndex : size_t {
+        MinInput, // Lower bound for the random pick
+        MaxInput  // Upper bound for the random pick
+    };
+
+    enum OutputIndex : size_t {
+        ResultOutput // Random value between Min and Max
+    };
+
     RandomRangeNode() {
         this->input.SetDefaultValues(
             detail::RngDefaultRange<Type>::Min(),
@@ -105,9 +115,9 @@ public:
     }
 
     void ExecuteNode() override {
-        const Type minValue = this->input.template Ref<0>();
-        const Type maxValue = this->input.template Ref<1>();
-        this->output.template Ref<0>() = detail::RngRangeGenerator<Type>::Generate(minValue, maxValue);
+        const Type minValue = this->input.template Ref<MinInput>();
+        const Type maxValue = this->input.template Ref<MaxInput>();
+        this->output.template Ref<ResultOutput>() = detail::RngRangeGenerator<Type>::Generate(minValue, maxValue);
     }
 };
 
@@ -115,6 +125,10 @@ template<typename Type>
 class RandomPoolNode : public BlenderNode<
     Out<Type>> {
 public:
+    enum OutputIndex : size_t {
+        ValueOutput // Random value selected from the pool
+    };
+
     RandomPoolNode() = default;
 
     RandomPoolNode(std::initializer_list<Type> values) {
@@ -131,7 +145,7 @@ public:
             return;
         }
         const size_t index = weave::rng::uniform<size_t>() % pool.size();
-        this->output.template Ref<0>() = pool[index];
+        this->output.template Ref<ValueOutput>() = pool[index];
     }
 
     void SetPool(std::initializer_list<Type> values) {
@@ -148,4 +162,3 @@ private:
 };
 
 } // namespace weave::blender
-

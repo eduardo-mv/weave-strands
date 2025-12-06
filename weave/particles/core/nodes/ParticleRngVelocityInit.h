@@ -15,12 +15,12 @@ public:
 	void ExecuteNode() override;
 
 	enum InputIndex : size_t {
-		MinVelocity,
-		MaxVelocity,
-		LimitX,
-		LimitY,
-		LimitZ,
-		Radial
+		MinVelocity, // Minimum randomized launch speed
+		MaxVelocity, // Maximum randomized launch speed
+		LimitX,      // Cosine clamp on X direction (-1..1)
+		LimitY,      // Cosine clamp on Y direction (-1..1)
+		LimitZ,      // Cosine clamp on Z direction (-1..1)
+		Radial       // Toggles outward velocity from particle position
 	};
 };
 

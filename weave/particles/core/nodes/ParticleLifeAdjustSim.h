@@ -15,13 +15,13 @@ public:
 	void ExecuteNode() override;
 
 	enum InputIndex : size_t {
-		TransformInput,
-		RadiusInput,
-		MinLifeInput,
-		MaxLifeInput,
-		RelativeMinInput,
-		RelativeMaxInput,
-		ClampUpperInput
+		TransformInput,   // Reference transform for optional radius queries
+		RadiusInput,      // Radius to limit lifetime adjustments
+		MinLifeInput,     // Minimum lifetime to enforce
+		MaxLifeInput,     // Maximum lifetime to enforce
+		RelativeMinInput, // Treat min life as a relative fraction of current life
+		RelativeMaxInput, // Treat max life as a relative fraction of current life
+		ClampUpperInput   // Whether to clamp lifetimes that exceed the max
 	};
 
 private:

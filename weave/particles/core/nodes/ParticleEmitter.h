@@ -17,15 +17,15 @@ public:
 	void Reset();
 
 	enum InputIndex : size_t {
-		MinEmit,
-		MaxEmit,
-		Rate,
-		MinFrequency,
-		MaxFrequency,
-		MaxRuntime,
-		MaxParticles,
-		ResetSignal,
-		InputCount
+		MinEmit,        // Minimum particles emitted per burst
+		MaxEmit,        // Maximum particles emitted per burst
+		Rate,           // Scalar multiplier applied to emission counts
+		MinFrequency,   // Shortest delay between emission windows (seconds)
+		MaxFrequency,   // Longest delay between emission windows (seconds)
+		MaxRuntime,     // Optional lifetime cap for the emitter (seconds)
+		MaxParticles,   // Hard cap for particles managed by this emitter
+		ResetSignal,    // Optional external reset trigger value
+		InputCount      // Sentinel entry for total emitter inputs
 	};
 
 private:

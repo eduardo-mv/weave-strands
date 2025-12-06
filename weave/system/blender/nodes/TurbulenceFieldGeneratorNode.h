@@ -29,11 +29,15 @@ public:
     void SetFields(std::vector<FieldConfig> configs);
 
     enum InputIndex : size_t {
-        MinForceInput,
-        MaxForceInput,
-        FrequencyInput,
-        VariationInput,
-        FieldCountInput
+        MinForceInput,   // Minimum force per generated field
+        MaxForceInput,   // Maximum force per generated field
+        FrequencyInput,  // Time between regeneration (seconds)
+        VariationInput,  // Blend between configured and random directions
+        FieldCountInput  // Number of fields to synthesize
+    };
+
+    enum OutputIndex : size_t {
+        FieldsOutput // Generated turbulence field list
     };
 
 private:

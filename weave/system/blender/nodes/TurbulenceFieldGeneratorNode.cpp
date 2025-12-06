@@ -81,7 +81,7 @@ void TurbulenceFieldGeneratorNode::ExecuteNode() {
         }
     }
 
-    auto& fieldList = this->output.template Ref<TurbulenceFieldList>();
+    auto& fieldList = this->output.template Ref<FieldsOutput>();
     fieldList.resize(fields.size());
     for (size_t i = 0; i < fields.size(); ++i) {
         const float minForce = fields[i].minForce >= 0.0f ? fields[i].minForce : minForceInput;

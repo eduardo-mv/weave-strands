@@ -13,14 +13,14 @@ public:
 	void ExecuteNode() override;
 
 	enum InputIndex : size_t {
-		DelayedInit,
-		IdleDistance,
-		ForceFieldDistance,
-		VelocityFieldDistance,
-		ForceMagnitude,
-		IdleToActiveTime,
-		ActiveToIdleTime,
-		Damping
+		DelayedInit,           // Time before newly spawned particles start following targets
+		IdleDistance,          // Radius that keeps particles in the idle region
+		ForceFieldDistance,    // Radius of the positional force field
+		VelocityFieldDistance, // Radius of the velocity field that steers travel
+		ForceMagnitude,        // Strength of the positional force toward the target
+		IdleToActiveTime,      // Duration to ramp from idle to chasing
+		ActiveToIdleTime,      // Duration to relax back to idle
+		Damping                // Velocity damping while homing
 	};
 
 private:
@@ -31,4 +31,3 @@ private:
 };
 
 } // namespace weave::particles
-

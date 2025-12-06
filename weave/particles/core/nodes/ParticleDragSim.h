@@ -13,13 +13,12 @@ public:
 	void ExecuteNode() override;
 
 	enum InputIndex : size_t {
-		LinearDrag,
-		ExponentialDrag,
-		MinVelocityCap,
-		MaxVelocityCap,
-		BreakVelocity
+		LinearDrag,      // Constant damping applied each frame
+		ExponentialDrag, // Damping proportional to current velocity
+		MinVelocityCap,  // Lower clamp for particle speed after drag
+		MaxVelocityCap,  // Upper clamp for particle speed after drag
+		BreakVelocity    // Threshold where particles come to rest
 	};
 };
 
 } // namespace weave::particles
-

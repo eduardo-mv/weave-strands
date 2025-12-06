@@ -15,9 +15,9 @@ public:
 	void ExecuteNode() override;
 
 	enum InputIndex : size_t {
-		TransformInput,
-		RadiusInput,
-		AgingMultiplierInput
+		TransformInput,      // Reference transform used for radius tests
+		RadiusInput,         // Optional radius in which to age particles faster
+		AgingMultiplierInput // Scalar applied to the lifetime decay
 	};
 
 private:
@@ -26,4 +26,3 @@ private:
 };
 
 } // namespace weave::particles
-

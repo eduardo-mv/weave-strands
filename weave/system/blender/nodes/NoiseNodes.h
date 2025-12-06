@@ -115,11 +115,15 @@ class PerlinNoiseNode : public BlenderNode<
 	Out<VectorType>> {
 public:
 	enum InputIndex : size_t {
-		PositionInput,
-		OffsetInput,
-        FrequencyInput,
-        SeedInput
-    };
+		PositionInput,  // Coordinates being sampled
+		OffsetInput,    // Additive offset applied to the sample
+		FrequencyInput, // Per-axis frequency multipliers
+		SeedInput       // Per-axis random seed offsets
+	};
+
+	enum OutputIndex : size_t {
+		NoiseOutput // Sampled noise vector
+	};
 
 	PerlinNoiseNode() {
 		this->input.SetDefaultValues(
@@ -142,7 +146,7 @@ public:
 				return detail::EvaluatePerlin(sample);
 			});
 
-		this->output.template Ref<0>() = result;
+		this->output.template Ref<NoiseOutput>() = result;
 	}
 };
 
@@ -152,11 +156,15 @@ class SimplexNoiseNode : public BlenderNode<
 	Out<VectorType>> {
 public:
 	enum InputIndex : size_t {
-		PositionInput,
-		OffsetInput,
-        FrequencyInput,
-        SeedInput
-    };
+		PositionInput,  // Coordinates being sampled
+		OffsetInput,    // Additive offset applied to the sample
+		FrequencyInput, // Per-axis frequency multipliers
+		SeedInput       // Per-axis random seed offsets
+	};
+
+	enum OutputIndex : size_t {
+		NoiseOutput // Sampled noise vector
+	};
 
 	SimplexNoiseNode() {
 		this->input.SetDefaultValues(
@@ -179,7 +187,7 @@ public:
 				return detail::EvaluateSimplex(sample);
 			});
 
-		this->output.template Ref<0>() = result;
+		this->output.template Ref<NoiseOutput>() = result;
 	}
 };
 
@@ -189,13 +197,17 @@ class TurbulenceNoiseNode : public BlenderNode<
 	Out<VectorType>> {
 public:
 	enum InputIndex : size_t {
-		PositionInput,
-		OffsetInput,
-		FrequencyInput,
-		SeedInput,
-		OctavesInput,
-		PersistenceInput,
-		LacunarityInput
+		PositionInput,   // Coordinates being sampled
+		OffsetInput,     // Additive offset applied to the sample
+		FrequencyInput,  // Per-axis frequency multipliers
+		SeedInput,       // Per-axis random seed offsets
+		OctavesInput,    // Number of noise layers to accumulate
+		PersistenceInput,// Amplitude falloff between octaves
+		LacunarityInput  // Frequency multiplier between octaves
+	};
+
+	enum OutputIndex : size_t {
+		NoiseOutput // Sampled noise vector
 	};
 
 	TurbulenceNoiseNode() {
@@ -236,7 +248,7 @@ public:
 				return value;
 			});
 
-		this->output.template Ref<0>() = result;
+		this->output.template Ref<NoiseOutput>() = result;
 	}
 };
 
@@ -246,11 +258,15 @@ class SimplexLoopNoiseNode : public BlenderNode<
 	Out<VectorType>> {
 public:
 	enum InputIndex : size_t {
-		PositionInput,
-		OffsetInput,
-		FrequencyInput,
-		SeedInput,
-		LoopFrequencyInput
+		PositionInput,    // Coordinates being sampled
+		OffsetInput,      // Additive offset applied to the sample
+		FrequencyInput,   // Per-axis frequency multipliers
+		SeedInput,        // Per-axis random seed offsets
+		LoopFrequencyInput// How quickly the loop repeats in time
+	};
+
+	enum OutputIndex : size_t {
+		NoiseOutput // Sampled noise vector
 	};
 
 	SimplexLoopNoiseNode() {
@@ -276,7 +292,7 @@ public:
 				return detail::EvaluateSimplexLoop(sample, freq);
 			});
 
-		this->output.template Ref<0>() = result;
+		this->output.template Ref<NoiseOutput>() = result;
 	}
 };
 
@@ -286,11 +302,15 @@ class PerlinLoopNoiseNode : public BlenderNode<
 	Out<VectorType>> {
 public:
 	enum InputIndex : size_t {
-		PositionInput,
-		OffsetInput,
-		FrequencyInput,
-		SeedInput,
-		LoopFrequencyInput
+		PositionInput,    // Coordinates being sampled
+		OffsetInput,      // Additive offset applied to the sample
+		FrequencyInput,   // Per-axis frequency multipliers
+		SeedInput,        // Per-axis random seed offsets
+		LoopFrequencyInput// How quickly the loop repeats in time
+	};
+
+	enum OutputIndex : size_t {
+		NoiseOutput // Sampled noise vector
 	};
 
 	PerlinLoopNoiseNode() {
@@ -316,7 +336,7 @@ public:
 				return detail::EvaluatePerlinLoop(sample);
 			});
 
-		this->output.template Ref<0>() = result;
+		this->output.template Ref<NoiseOutput>() = result;
 	}
 };
 
@@ -325,11 +345,15 @@ class CircularNoiseNode : public BlenderNode<
 	Out<Vector2>> {
 public:
 	enum InputIndex : size_t {
-		PositionInput,
-		OffsetInput,
-		FrequencyInput,
-		SeedInput,
-		LoopFrequencyInput
+		PositionInput,    // Coordinates being sampled
+		OffsetInput,      // Additive offset applied to the sample
+		FrequencyInput,   // Per-axis frequency multipliers
+		SeedInput,        // Per-axis random seed offsets
+		LoopFrequencyInput// How quickly the loop repeats in time
+	};
+
+	enum OutputIndex : size_t {
+		NoiseOutput // Sampled noise vector
 	};
 
 	CircularNoiseNode() {
@@ -355,7 +379,7 @@ public:
 				return noise::circular(sample.x, sample.y, freq);
 			});
 
-		this->output.template Ref<0>() = result;
+		this->output.template Ref<NoiseOutput>() = result;
 	}
 };
 

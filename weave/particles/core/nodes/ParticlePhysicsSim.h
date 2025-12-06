@@ -13,10 +13,9 @@ public:
 	void ExecuteNode() override;
 
 	enum InputIndex : size_t {
-		LinearDamping,
-		Gravity
+		LinearDamping, // Scalar applied to velocities each frame
+		Gravity       // World gravity vector applied to all particles
 	};
 };
 
 } // namespace weave::particles
-

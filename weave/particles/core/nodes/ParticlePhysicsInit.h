@@ -13,12 +13,11 @@ public:
 	void ExecuteNode() override;
 
 	enum InputIndex : size_t {
-		MinAgeInput,
-		MaxAgeInput,
-		MinMassInput,
-		MaxMassInput
+		MinAgeInput,  // Minimum random lifetime assigned to particles
+		MaxAgeInput,  // Maximum random lifetime assigned to particles
+		MinMassInput, // Minimum random mass
+		MaxMassInput  // Maximum random mass
 	};
 };
 
 } // namespace weave::particles
-

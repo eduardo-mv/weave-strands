@@ -18,10 +18,10 @@ public:
 	void SetBetaHemisphere(bool value) { betaHemisphere = value; }
 
 	enum InputIndex : size_t {
-		MinRadius,
-		MaxRadius,
-		Alpha,
-		Beta
+		MinRadius, // Minimum spawn radius from the center
+		MaxRadius, // Maximum spawn radius from the center
+		Alpha,     // Longitudinal angle span
+		Beta       // Latitudinal angle span
 	};
 
 private:

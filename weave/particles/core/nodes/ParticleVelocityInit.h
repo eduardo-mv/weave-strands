@@ -13,13 +13,12 @@ public:
 	void ExecuteNode() override;
 
 	enum InputIndex : size_t {
-		Direction,
-		UpAngle,
-		SideAngle,
-		MinVelocity,
-		MaxVelocity
+		Direction,   // Central axis of the spawn cone
+		UpAngle,     // Vertical spread angle
+		SideAngle,   // Horizontal spread angle
+		MinVelocity, // Minimum launch speed
+		MaxVelocity  // Maximum launch speed
 	};
 };
 
 } // namespace weave::particles
-

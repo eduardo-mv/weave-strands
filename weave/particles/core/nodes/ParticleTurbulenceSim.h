@@ -16,10 +16,10 @@ public:
 	void ExecuteNode() override;
 
 	enum InputIndex : size_t {
-		TransformInput,
-		FieldListInput,
-		RadiusInput,
-		DecayInput
+		TransformInput, // Emitter transform to evaluate fields in local space
+		FieldListInput, // List of turbulence fields to apply
+		RadiusInput,    // Optional influence radius
+		DecayInput      // Falloff applied as particles leave the radius
 	};
 
 private:

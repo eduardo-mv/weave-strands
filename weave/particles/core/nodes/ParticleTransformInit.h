@@ -15,14 +15,14 @@ public:
 	void ExecuteNode() override;
 
 	enum InputIndex : size_t {
-		TransformInput,
-		ApplyEmission,
-		ApplyEditable,
-		TranslatePosition,
-		RotatePosition,
-		ScalePosition,
-		RotateVelocity,
-		ScaleVelocity
+		TransformInput,    // Transform applied to particles during init
+		ApplyEmission,     // Whether to affect the emission buffer
+		ApplyEditable,     // Whether to affect the editable buffer
+		TranslatePosition, // Translates particle positions by the transform
+		RotatePosition,    // Rotates particle positions by the transform
+		ScalePosition,     // Scales particle positions by the transform
+		RotateVelocity,    // Rotates particle velocities
+		ScaleVelocity      // Scales particle velocities
 	};
 };
 

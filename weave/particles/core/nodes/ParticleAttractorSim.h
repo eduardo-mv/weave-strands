@@ -15,14 +15,13 @@ public:
 	void ExecuteNode() override;
 
 	enum InputIndex : size_t {
-		AttractorTransform,
-		ForceMagnitude,
-		GravityScale,
-		Radius,
-		Decay,
-		Direction
+		AttractorTransform, // World transform the particles move toward
+		ForceMagnitude,     // Base force applied toward the attractor
+		GravityScale,       // Additional gravity-like pull strength
+		Radius,             // Distance where the attractor stops influencing
+		Decay,              // Falloff applied as particles move away
+		Direction           // Optional direction override instead of transform
 	};
 };
 
 } // namespace weave::particles
-
