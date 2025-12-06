@@ -48,7 +48,7 @@ float ParticleEmitter::RandomFrequency(float minFreq, float maxFreq) const {
 
 void ParticleEmitter::ExecuteNode() {
 	auto& context = GetContext();
-	if (context.buffers.empty()) {
+	if (context.BufferCount() == 0) {
 		return;
 	}
 
@@ -137,13 +137,9 @@ void ParticleEmitter::ExecuteNode() {
 		return;
 	}
 
-	for (auto* buffer : context.buffers) {
-		if (buffer) {
-			buffer->AddEmissionParticles(particlesToEmit);
-		}
-	}
-
 	emittedTotal += particlesToEmit;
+
+	context.AddEmissionParticles(particlesToEmit);
 }
 
 } // namespace weave::particles

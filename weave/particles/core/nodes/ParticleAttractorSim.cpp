@@ -37,7 +37,7 @@ ParticleAttractorSim::ParticleAttractorSim() {
 
 void ParticleAttractorSim::ExecuteNode() {
 	auto& context = GetContext();
-	if (context.buffers.empty()) {
+	if (context.BufferCount() == 0) {
 		return;
 	}
 
@@ -60,7 +60,7 @@ void ParticleAttractorSim::ExecuteNode() {
 		worldDirection = attractor.GetTransformMatrix().TransformNormal(directionInput);
 	}
 
-	for (auto* buffer : context.buffers) {
+	for (auto buffer : context.IterateSimulationRanges()) {
 		if (!buffer) {
 			continue;
 		}

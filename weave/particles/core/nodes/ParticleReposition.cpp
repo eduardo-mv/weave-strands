@@ -24,7 +24,7 @@ ParticleReposition::ParticleReposition() {
 
 void ParticleReposition::ExecuteNode() {
 	auto& context = GetContext();
-	if (context.buffers.empty()) {
+	if (context.BufferCount() == 0) {
 		return;
 	}
 
@@ -44,18 +44,18 @@ void ParticleReposition::ExecuteNode() {
 
 void ParticleReposition::ProcessEmissionBuffers(float delayedInit, float idleToActiveTime) {
 	auto& context = GetContext();
-	for (auto* buffer : context.buffers) {
+	for (auto buffer : context.IterateEmissionRanges(triggerCountTarget)) {
 		if (!buffer) {
 			continue;
 		}
 
-		auto& layout = buffer->GetLayout();
+		auto& layout = buffer.GetLayout();
 		auto offsets = layout.GetOffsets<layout::Position, layout::LifeTime, layout::Target>();
 		if (ParticleLayout::HasInvalidOffsets(offsets)) {
 			continue;
 		}
 
-		auto emissionSpan = buffer->EmissionSpan<layout::Position, layout::LifeTime, layout::Target>(0, offsets);
+		auto emissionSpan = buffer.EmissionSpan<layout::Position, layout::LifeTime, layout::Target>(offsets);
 		for (auto&& [position, lifeTime, target] : emissionSpan) {
 			target.time = idleToActiveTime;
 			if (delayedInit == 0.0f) {
@@ -71,7 +71,7 @@ void ParticleReposition::ProcessEditableBuffers(float delayedInit, float idleDis
 	auto& context = GetContext();
 	const float deltaTime = std::max(0.0f, context.sampling.deltaTime);
 
-	for (auto* buffer : context.buffers) {
+	for (auto buffer : context.IterateSimulationRanges()) {
 		if (!buffer) {
 			continue;
 		}
@@ -141,4 +141,3 @@ void ParticleReposition::ProcessEditableBuffers(float delayedInit, float idleDis
 }
 
 } // namespace weave::particles
-

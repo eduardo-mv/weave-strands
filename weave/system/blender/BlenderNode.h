@@ -16,6 +16,8 @@ namespace weave::blender {
 struct BlenderNodeBase {
 protected:
 	int64_t executionStamp{};
+	int32_t triggerCounter{};
+	int32_t triggerCountTarget{}; //Amount of times the node needs to be triggered to allow execution as a trigger. Increased every time a node is connected to another node's trigger
 	std::vector<BlenderNodeBase*> triggers;
 
 public:
@@ -30,7 +32,11 @@ public:
 	void ExecuteTriggers(int64_t executionCounter) {
 		for (auto* trigger : triggers) {
 			if (trigger) {
-				trigger->Execute(executionCounter);
+				trigger->triggerCounter++;
+				if(trigger->triggerCounter >= trigger->triggerCountTarget) {
+					trigger->triggerCounter = 0;
+					trigger->Execute(executionCounter);
+				}
 			}
 		}
 	}
@@ -38,6 +44,7 @@ public:
 	void ConnectTrigger(BlenderNodeBase* trigger) {
 		if (trigger) {
 			if (std::find(triggers.begin(), triggers.end(), trigger) == triggers.end()) {
+				trigger->triggerCountTarget++;
 				triggers.push_back(trigger);
 			}
 		}

@@ -53,7 +53,7 @@ ParticleLifeAdjustSim::ParticleLifeAdjustSim() {
 
 void ParticleLifeAdjustSim::ExecuteNode() {
 	auto& context = GetContext();
-	if (context.buffers.empty()) {
+	if (context.BufferCount() == 0) {
 		return;
 	}
 
@@ -75,7 +75,7 @@ void ParticleLifeAdjustSim::ExecuteNode() {
 void ParticleLifeAdjustSim::AdjustAllParticles(float minInput, float maxInput, bool relativeMin, bool relativeMax, bool clampUpper) {
 	auto& context = GetContext();
 
-	for (auto* buffer : context.buffers) {
+	for (auto buffer : context.IterateSimulationRanges()) {
 		if (!buffer) {
 			continue;
 		}
@@ -102,7 +102,7 @@ void ParticleLifeAdjustSim::AdjustParticlesInRadius(float radiusSq,
 
 	auto& context = GetContext();
 
-	for (auto* buffer : context.buffers) {
+	for (auto buffer : context.IterateSimulationRanges()) {
 		if (!buffer) {
 			continue;
 		}

@@ -28,8 +28,8 @@ public:
 	ParticleContext const& Context() const;
 
 	void ClearBuffers();
-	void SetBuffers(std::vector<ParticleBuffer*> buffers);
-	void AddBuffer(ParticleBuffer& buffer);
+	void SetBuffers(std::vector<std::shared_ptr<ParticleBuffer>> buffers);
+	void AddBuffer(std::shared_ptr<ParticleBuffer> buffer);
 
 	void SetSamplingData(float deltaTime, uint64_t iteration, bool isVisible);
 

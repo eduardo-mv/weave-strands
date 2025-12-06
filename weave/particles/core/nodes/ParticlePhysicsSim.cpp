@@ -16,7 +16,7 @@ ParticlePhysicsSim::ParticlePhysicsSim() {
 
 void ParticlePhysicsSim::ExecuteNode() {
 	auto& context = GetContext();
-	if (context.buffers.empty()) {
+	if (context.BufferCount() == 0) {
 		return;
 	}
 
@@ -29,7 +29,7 @@ void ParticlePhysicsSim::ExecuteNode() {
 	const float damping = dampingBase > 0.0f ? std::pow(dampingBase, deltaTime) : 0.0f;
 	const Vector3 gravity = this->input.template Ref<Gravity>() * deltaTime;
 
-	for (auto* buffer : context.buffers) {
+	for (auto buffer : context.IterateSimulationRanges()) {
 		if (!buffer) {
 			continue;
 		}

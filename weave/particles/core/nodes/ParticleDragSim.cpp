@@ -21,7 +21,7 @@ ParticleDragSim::ParticleDragSim() {
 
 void ParticleDragSim::ExecuteNode() {
 	auto& context = GetContext();
-	if (context.buffers.empty()) {
+	if (context.BufferCount() == 0) {
 		return;
 	}
 
@@ -32,7 +32,7 @@ void ParticleDragSim::ExecuteNode() {
 	const float maxCap = maxCapInput < 0.0f ? std::numeric_limits<float>::max() : maxCapInput;
 	const float breakCap = std::max(0.0f, this->input.template Ref<BreakVelocity>());
 
-	for (auto* buffer : context.buffers) {
+	for (auto buffer : context.IterateSimulationRanges()) {
 		if (!buffer) {
 			continue;
 		}

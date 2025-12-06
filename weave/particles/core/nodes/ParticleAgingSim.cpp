@@ -18,7 +18,7 @@ ParticleAgingSim::ParticleAgingSim() {
 
 void ParticleAgingSim::ExecuteNode() {
 	auto& context = GetContext();
-	if (context.buffers.empty()) {
+	if (context.BufferCount() == 0) {
 		return;
 	}
 	
@@ -41,7 +41,7 @@ void ParticleAgingSim::ExecuteNode() {
 void ParticleAgingSim::AgeParticles(float deltaTime) {
 	auto& context = GetContext();
 
-	for (auto* buffer : context.buffers) {
+	for (auto buffer : context.IterateSimulationRanges()) {
 		if (!buffer) {
 			continue;
 		}
@@ -80,7 +80,7 @@ void ParticleAgingSim::AgeParticlesInRadius(float deltaTime, float radiusSq) {
 	
 	auto& context = GetContext();
 
-	for (auto* buffer : context.buffers) {
+	for (auto buffer : context.IterateSimulationRanges()) {
 		if (!buffer) {
 			continue;
 		}

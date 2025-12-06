@@ -29,7 +29,7 @@ ParticleTurbulenceSim::ParticleTurbulenceSim() {
 
 void ParticleTurbulenceSim::ExecuteNode() {
 	auto& context = GetContext();
-	if (context.buffers.empty()) {
+	if (context.BufferCount() == 0) {
 		return;
 	}
 
@@ -53,7 +53,7 @@ void ParticleTurbulenceSim::ApplyTurbulence(blender::TurbulenceFieldList const& 
 	const bool useRadius = radiusInput >= 0.0f;
 	const float scaledRadius = radiusInput * transform.GetScaling().x;
 
-	for (auto* buffer : context.buffers) {
+	for (auto buffer : context.IterateSimulationRanges()) {
 		if (!buffer) {
 			continue;
 		}

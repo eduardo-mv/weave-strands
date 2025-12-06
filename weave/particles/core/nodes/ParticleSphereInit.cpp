@@ -32,7 +32,7 @@ ParticleSphereInit::ParticleSphereInit() {
 
 void ParticleSphereInit::ExecuteNode() {
 	auto& context = GetContext();
-	if (context.buffers.empty()) {
+	if (context.BufferCount() == 0) {
 		return;
 	}
 
@@ -49,12 +49,12 @@ void ParticleSphereInit::ExecuteNode() {
 	const float minAlpha = -alphaHalf * 0.5f;
 	const float minBeta = -betaHalf * 0.5f;
 
-	for (auto* buffer : context.buffers) {
+	for (auto buffer : context.IterateEmissionRanges(triggerCountTarget)) {
 		if (!buffer) {
 			continue;
 		}
 
-		auto const& layout = buffer->GetLayout();
+		auto const& layout = buffer.GetLayout();
 		const size_t particleSize = layout.particleByteSize;
 		if (particleSize == 0) {
 			continue;
@@ -69,7 +69,7 @@ void ParticleSphereInit::ExecuteNode() {
 			continue;
 		}
 
-		for (auto&& [position] : buffer->EmissionSpan<layout::Position>(0, layoutPositionOffset)) {
+		for (auto&& [position] : buffer.EmissionSpan<layout::Position>(layoutPositionOffset)) {
 			Vector3& pos = position.pos;
 			const float radius = RandomRadius(minRadius, maxRadius);
 			const float theta = RandomAngle(minAlpha, minAlpha + alphaHalf);

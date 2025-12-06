@@ -5,12 +5,7 @@
 namespace weave::particles {
 
 void CommitEmissionNode::ExecuteNode() {
-	for (auto* buffer : GetContext().buffers) {
-		if (buffer) {
-			buffer->CommitEmittedParticles();
-		}
-	}
+	GetContext().CommitEmissionparticles();
 }
 
 } // namespace weave::particles
-

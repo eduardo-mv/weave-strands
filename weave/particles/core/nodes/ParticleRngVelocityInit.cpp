@@ -42,7 +42,7 @@ ParticleRngVelocityInit::ParticleRngVelocityInit() {
 
 void ParticleRngVelocityInit::ExecuteNode() {
 	auto& context = GetContext();
-	if (context.buffers.empty()) {
+	if (context.BufferCount() == 0) {
 		return;
 	}
 
@@ -55,18 +55,18 @@ void ParticleRngVelocityInit::ExecuteNode() {
 	const bool radial = this->input.template Ref<Radial>();
 	const bool hasLimits = limitX || limitY || limitZ;
 
-	for (auto* buffer : context.buffers) {
+	for (auto buffer : context.IterateEmissionRanges(triggerCountTarget)) {
 		if (!buffer) {
 			continue;
 		}
 
-		auto& layout = buffer->GetLayout();
+		auto& layout = buffer.GetLayout();
 		auto offsets = layout.GetOffsets<layout::Position, layout::Velocity>();
 		if (ParticleLayout::HasInvalidOffsets(offsets)) {
 			continue;
 		}
 
-		auto emissionSpan = buffer->EmissionSpan<layout::Position, layout::Velocity>(0, offsets);
+		auto emissionSpan = buffer.EmissionSpan<layout::Position, layout::Velocity>(offsets);
 		for (auto&& [pos, vel] : emissionSpan) {
 			Vector3 direction{};
 

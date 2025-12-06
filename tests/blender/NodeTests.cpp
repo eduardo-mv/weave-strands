@@ -202,6 +202,7 @@ TestReport TestNodes() {
 		someBool->setMe = true;
 
 		auto message = blender.CreateNode<MessageNode>("I'm a SomeMult Trigger...");
+		auto messageTrig2 = blender.CreateNode<MessageNode>("I'm a SomeMult & PrintFloats Trigger...");
 
 		auto root = blender.CreateNode<MessageNode>("Start of the tree!");
 		root->ConnectTrigger(someMult);
@@ -209,8 +210,10 @@ TestReport TestNodes() {
 
 		someMult->ConnectInputTo(0, constantFloat, 0);
 		someMult->ConnectTrigger(message);
+		someMult->ConnectTrigger(messageTrig2);
 		someMult->ConnectTrigger(someNode);
 		someMult->ConnectTrigger(printFloats);
+		printFloats->ConnectTrigger(messageTrig2);
 
 		someNode->ConnectInputTo(0, constantFloat, 0);
 		someNode->ConnectInputTo(0, constantFloat, 1);

@@ -23,11 +23,11 @@ void ParticleMachine::ClearBuffers() {
 	context->ClearBuffers();
 }
 
-void ParticleMachine::SetBuffers(std::vector<ParticleBuffer*> buffers) {
+void ParticleMachine::SetBuffers(std::vector<std::shared_ptr<ParticleBuffer>> buffers) {
 	context->SetBuffers(std::move(buffers));
 }
 
-void ParticleMachine::AddBuffer(ParticleBuffer& buffer) {
+void ParticleMachine::AddBuffer(std::shared_ptr<ParticleBuffer> buffer) {
 	context->AddBuffer(buffer);
 }
 

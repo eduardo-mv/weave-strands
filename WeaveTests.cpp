@@ -91,6 +91,7 @@
 #include <algorithm>
 #include <exception>
 #include <string_view>
+#include <memory>
 
 /*
 Port Anim to Blenders
@@ -646,7 +647,7 @@ void main() {
     constexpr size_t kReserveParticles = 10000;
 
     wp::ParticleLayout particleLayout = wp::ParticleLayout::BuildStdParticleLayout();
-    wp::ParticleBuffer particleBuffer(0, particleLayout);
+    auto particleBuffer = std::make_shared<wp::ParticleBuffer>(0, particleLayout);
     wp::ParticleMachine particleMachine;
     particleMachine.AddBuffer(particleBuffer);
 
@@ -823,7 +824,7 @@ void main() {
         particleMachine.SetSamplingData(deltaSeconds, particleIteration, true);
         particleMachine.Execute();
 
-        wpgl::GpuParticleSnapshot::ParticleSpan span{ particleBuffer.ActiveByteSpan(), particleBuffer.GetParticleByteSize() };
+        wpgl::GpuParticleSnapshot::ParticleSpan span{ particleBuffer->ActiveByteSpan(), particleBuffer->GetParticleByteSize() };
         particleSnapshot.UploadParticleSpan(span);
         particleSnapshot.CommitSnapshot();
         particleSnapshot.ProcessStreamingQueue(0, std::chrono::milliseconds::zero());

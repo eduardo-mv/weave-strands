@@ -9,6 +9,7 @@
 
 #include <cmath>
 #include <cstddef>
+#include <memory>
 
 namespace weave::tests::particles {
 namespace {
@@ -22,11 +23,11 @@ struct ParticleTestWriter : wp::ParticleNode<> {
 	void ExecuteNode() override {
 		wroteCount = 0;
 		auto& context = GetContext();
-		for (auto* buffer : context.buffers) {
+		for (auto buffer : context.IterateEmissionRanges(triggerCountTarget)) {
 			if (!buffer) {
 				continue;
 			}
-			for (auto&& [life, maxLife] : buffer->EmissionSpan<wp::layout::LifeTime, wp::layout::MaxLifeTime>()) {
+			for (auto&& [life, maxLife] : buffer.EmissionSpan<wp::layout::LifeTime, wp::layout::MaxLifeTime>()) {
 				life.lifeTime = lifeValue;
 				maxLife.maxLifeTime = maxLifeValue;
 				++wroteCount;
@@ -47,7 +48,7 @@ struct ParticleTestInspector : wp::ParticleNode<> {
 		verifiedCount = 0;
 		mismatchCount = 0;
 		auto& context = GetContext();
-		for (auto* buffer : context.buffers) {
+		for (auto buffer : context.IterateSimulationRanges()) {
 			if (!buffer) {
 				continue;
 			}
@@ -79,7 +80,7 @@ TestReport RunParticleMachineSelfTest() {
 	TestReport report;
 
 	wp::ParticleMachine machine;
-	wp::ParticleBuffer buffer(0, wp::ParticleLayout::BuildStdParticleLayout());
+	auto buffer = std::make_shared<wp::ParticleBuffer>(0, wp::ParticleLayout::BuildStdParticleLayout());
 	machine.AddBuffer(buffer);
 	machine.SetSamplingData(1.0f, 1, true);
 
@@ -103,7 +104,7 @@ TestReport RunParticleMachineSelfTest() {
 
 	machine.Execute();
 
-	auto editableSpan = buffer.EditableSpan<wp::layout::LifeTime, wp::layout::MaxLifeTime>();
+	auto editableSpan = buffer->EditableSpan<wp::layout::LifeTime, wp::layout::MaxLifeTime>();
 	const size_t editableCount = editableSpan.size();
 
 	report.Expect(writer->wroteCount == kParticlesToEmit, "Writer node did not emit expected particle count");

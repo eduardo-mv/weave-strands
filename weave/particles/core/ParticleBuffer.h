@@ -1,5 +1,6 @@
 #pragma once
 
+#include <algorithm>
 #include <array>
 #include <cstddef>
 #include <cstdint>
@@ -85,6 +86,8 @@ private:
 
 class ParticleBuffer {
 private:
+	static constexpr const size_t kMaxItems = size_t(-1);
+
 	std::vector<std::byte> memoryBuffer;
 	std::ptrdiff_t editableEndOffset = 0; // Editable part starts at 0 always
 	std::ptrdiff_t emissionStartOffset = 0; // Emission part ends at the buffer's tail
@@ -133,17 +136,33 @@ public:
 		auto *end = memoryBuffer.data() + editableEndOffset;
 		return {begin , end, layout.particleByteSize, std::move(offsets)};
 	}
-
+	
 	template<typename ...Types>
-	particle_span<Types...> EmissionSpan(size_t offsetItems = 0) {
-		return EmissionSpan<Types...>(offsetItems, layout.GetOffsets<Types...>());
+	particle_span<Types...> EmissionSpan(size_t offsetItems = 0, size_t itemCount = kMaxItems) {
+		return EmissionSpan<Types...>(offsetItems, itemCount, layout.GetOffsets<Types...>());
 	}
 
 	template<typename ...Types>
-	particle_span<Types...> EmissionSpan(size_t offsetItems, ParticleOffsetArray<Types...> offsets) {
-		auto *begin = memoryBuffer.data() + emissionStartOffset + offsetItems * layout.particleByteSize;
-		auto *end = memoryBuffer.data() + std::ptrdiff_t(memoryBuffer.size());
-		return {begin , end, layout.particleByteSize, std::move(offsets)};
+	particle_span<Types...> EmissionSpan(size_t offsetItems, size_t itemCount, ParticleOffsetArray<Types...> offsets) {
+		const size_t stride = layout.particleByteSize;
+		auto* base = memoryBuffer.data() + emissionStartOffset;
+		auto* endOfBuffer = memoryBuffer.data() + memoryBuffer.size();
+
+		base = std::clamp(base, memoryBuffer.data(), endOfBuffer);
+		if (stride == 0 || base == endOfBuffer) {
+			return { base, base, stride, std::move(offsets) };
+		}
+
+		const size_t maxItemsFromBase = (endOfBuffer - base) / stride;
+		const size_t clampedOffset = std::min(offsetItems, maxItemsFromBase);
+		auto* begin = base + clampedOffset * stride;
+
+		const size_t available = (endOfBuffer - begin) / stride;
+		const size_t requested = (itemCount == kMaxItems) ? available
+															: std::min(itemCount, available);
+		auto* end = begin + requested * stride;
+
+		return { begin, end, stride, std::move(offsets) };
 	}
 
 private:

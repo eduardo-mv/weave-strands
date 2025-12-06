@@ -21,7 +21,7 @@ ParticleVelocityInit::ParticleVelocityInit() {
 
 void ParticleVelocityInit::ExecuteNode() {
 	auto& context = GetContext();
-	if (context.buffers.empty()) {
+	if (context.BufferCount() == 0) {
 		return;
 	}
 
@@ -32,12 +32,12 @@ void ParticleVelocityInit::ExecuteNode() {
 	const float maxVel = std::max(minVel, this->input.template Ref<MaxVelocity>());
 	const float velDiff = maxVel - minVel;
 
-	for (auto* buffer : context.buffers) {
+	for (auto buffer : context.IterateEmissionRanges(triggerCountTarget)) {
 		if (!buffer) {
 			continue;
 		}
 
-		auto& layout = buffer->GetLayout();
+		auto& layout = buffer.GetLayout();
 		const size_t velocityOffset = layout.GetOffset<layout::Velocity>();
 		if (velocityOffset == ParticleLayout::kInvalidOffset) {
 			continue;
@@ -54,7 +54,7 @@ void ParticleVelocityInit::ExecuteNode() {
 		const Vector3 limitSideA = Quaternion(sideAngle, up, false) * directionInput;
 		const Vector3 limitSideB = algebra::reflect(-limitSideA, directionInput);
 
-		auto emissionSpan = buffer->EmissionSpan<layout::Velocity>();
+		auto emissionSpan = buffer.EmissionSpan<layout::Velocity>();
 		for (auto&& [vel] : emissionSpan) {
 			const float tA = weave::rng::uniform<float>();
 			const float tB = weave::rng::uniform<float>();
