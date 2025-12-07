@@ -195,7 +195,7 @@ void Framebuffer::FindViewportSize() {
 	}
 }
 
-unsigned int Framebuffer::CheckStatus(bool debugAssert) const {
+unsigned int Framebuffer::CheckStatus([[maybe_unused]] bool debugAssert) const {
 	Bind();
 	auto ret = gl::CheckFramebufferStatus(gl::DRAW_FRAMEBUFFER);
 	switch(ret) {

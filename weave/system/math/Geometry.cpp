@@ -1,4 +1,5 @@
 #include "Geometry.h"
+#include <bit>
 
 using namespace weave;
 using namespace weave::algebra;
@@ -76,8 +77,6 @@ vec3 geometry::circumcenter(vec3 const &p1, vec3 const &p2, vec3 const &p3) {
 
 //Point in triangle algorithm taken from: http://www.peroxide.dk/papers/collision/collision.pdf
 //Returns true if the supplied point is inside the triangle defined by pA,pB,PC
-//NOTE: This looks rather dangerous as it's directly assuming 32bit ints and converting floats to those. Take care.
-#define in(a) ((uint32_t&) a)
 unsigned int geometry::pointInTriangle(vec3 const &point, vec3 const &pa, vec3 const &pb, vec3 const &pc) {
 	vec3 e10 = pb-pa;
 	vec3 e20 = pc-pa;
@@ -92,6 +91,9 @@ unsigned int geometry::pointInTriangle(vec3 const &point, vec3 const &pa, vec3 c
 	float x = (d*c) - (e*b);
 	float y = (e*a) - (d*b);
 	float z = x + y - ac_bb;
-	return (( in(z)& ~(in(x)|in(y)) ) & 0x80000000);
+
+	uint32_t const bitsX = std::bit_cast<uint32_t>(x);
+	uint32_t const bitsY = std::bit_cast<uint32_t>(y);
+	uint32_t const bitsZ = std::bit_cast<uint32_t>(z);
+	return ((bitsZ & ~(bitsX | bitsY)) & 0x80000000u);
 }
-#undef in

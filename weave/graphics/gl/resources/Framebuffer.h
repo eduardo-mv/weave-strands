@@ -86,7 +86,7 @@ public:
 	unsigned int Height() const { return height; }
 
 	//Returns the enum given by gl::CheckFramebufferStatus(gl::DRAW_FRAMEBUFFER)
-	unsigned int CheckStatus(bool debugAssert = false) const;
+		unsigned int CheckStatus([[maybe_unused]] bool debugAssert = false) const;
 	std::string CheckStatusString() const;
 
 	//Generates mipmaps through GL for all color targets
