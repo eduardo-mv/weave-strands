@@ -41,36 +41,35 @@ void ParticleAgingSim::ExecuteNode() {
 void ParticleAgingSim::AgeParticles(float deltaTime) {
 	auto& context = GetContext();
 
-	for (auto buffer : context.IterateSimulationRanges()) {
-		if (!buffer) {
+	auto* buffer = context.GetCurrentBuffer();
+	if (!buffer) {
+		return;
+	}
+
+	auto& layout = buffer->GetLayout();
+	auto offsets = layout.GetOffsets<layout::LifeTime, layout::MaxLifeTime>();
+
+	if (ParticleLayout::HasInvalidOffsets(offsets)) {
+		return;
+	}
+
+	auto editableSpan = buffer->EditableSpan<layout::LifeTime, layout::MaxLifeTime>(0, offsets);
+	size_t index = 0;
+	while (index < editableSpan.size()) {
+		auto&& [life, maxLife] = editableSpan[index];
+		life.lifeTime += deltaTime;
+
+		if (life.lifeTime > maxLife.maxLifeTime) {
+			buffer->KillParticles(index, 1);
+			editableSpan = buffer->EditableSpan<layout::LifeTime, layout::MaxLifeTime>(0, offsets);
 			continue;
 		}
 
-		auto& layout = buffer->GetLayout();
-		auto offsets = layout.GetOffsets<layout::LifeTime, layout::MaxLifeTime>();
-
-		if (ParticleLayout::HasInvalidOffsets(offsets)) {
-			continue;
+		if (life.lifeTime < 0.0f) {
+			life.lifeTime = 0.0f;
 		}
 
-		auto editableSpan = buffer->EditableSpan<layout::LifeTime, layout::MaxLifeTime>(0, offsets);
-		size_t index = 0;
-		while (index < editableSpan.size()) {
-			auto&& [life, maxLife] = editableSpan[index];
-			life.lifeTime += deltaTime;
-
-			if (life.lifeTime > maxLife.maxLifeTime) {
-				buffer->KillParticles(index, 1);
-				editableSpan = buffer->EditableSpan<layout::LifeTime, layout::MaxLifeTime>(0, offsets);
-				continue;
-			}
-
-			if (life.lifeTime < 0.0f) {
-				life.lifeTime = 0.0f;
-			}
-
-			++index;
-		}
+		++index;
 	}
 }
 
@@ -80,41 +79,40 @@ void ParticleAgingSim::AgeParticlesInRadius(float deltaTime, float radiusSq) {
 	
 	auto& context = GetContext();
 
-	for (auto buffer : context.IterateSimulationRanges()) {
-		if (!buffer) {
-			continue;
-		}
+	auto* buffer = context.GetCurrentBuffer();
+	if (!buffer) {
+		return;
+	}
 
-		auto& layout = buffer->GetLayout();
-		auto offsets = layout.GetOffsets<layout::Position, layout::LifeTime, layout::MaxLifeTime>();
-		if (ParticleLayout::HasInvalidOffsets(offsets)) {
-			continue;
-		}
+	auto& layout = buffer->GetLayout();
+	auto offsets = layout.GetOffsets<layout::Position, layout::LifeTime, layout::MaxLifeTime>();
+	if (ParticleLayout::HasInvalidOffsets(offsets)) {
+		return;
+	}
 
-		auto editableSpan = buffer->EditableSpan<layout::Position, layout::LifeTime, layout::MaxLifeTime>(0, offsets);
-		size_t index = 0;
-		while (index < editableSpan.size()) {
-			auto&& [position, life, maxLife] = editableSpan[index];
-			Vector3 diff = position.pos - center;
-			if (algebra::lengthSqr(diff) > radiusSq) {
-				++index;
-				continue;
-			}
-
-			life.lifeTime += deltaTime;
-
-			if (life.lifeTime > maxLife.maxLifeTime) {
-				buffer->KillParticles(index, 1);
-				editableSpan = buffer->EditableSpan<layout::Position, layout::LifeTime, layout::MaxLifeTime>(0, offsets);
-				continue;
-			}
-
-			if (life.lifeTime < 0.0f) {
-				life.lifeTime = 0.0f;
-			}
-
+	auto editableSpan = buffer->EditableSpan<layout::Position, layout::LifeTime, layout::MaxLifeTime>(0, offsets);
+	size_t index = 0;
+	while (index < editableSpan.size()) {
+		auto&& [position, life, maxLife] = editableSpan[index];
+		Vector3 diff = position.pos - center;
+		if (algebra::lengthSqr(diff) > radiusSq) {
 			++index;
+			continue;
 		}
+
+		life.lifeTime += deltaTime;
+
+		if (life.lifeTime > maxLife.maxLifeTime) {
+			buffer->KillParticles(index, 1);
+			editableSpan = buffer->EditableSpan<layout::Position, layout::LifeTime, layout::MaxLifeTime>(0, offsets);
+			continue;
+		}
+
+		if (life.lifeTime < 0.0f) {
+			life.lifeTime = 0.0f;
+		}
+
+		++index;
 	}
 }
 

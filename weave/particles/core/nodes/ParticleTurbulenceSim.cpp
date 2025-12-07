@@ -53,50 +53,49 @@ void ParticleTurbulenceSim::ApplyTurbulence(blender::TurbulenceFieldList const& 
 	const bool useRadius = radiusInput >= 0.0f;
 	const float scaledRadius = radiusInput * transform.GetScaling().x;
 
-	for (auto buffer : context.IterateSimulationRanges()) {
-		if (!buffer) {
+	auto* buffer = context.GetCurrentBuffer();
+	if (!buffer) {
+		return;
+	}
+
+	auto& layout = buffer->GetLayout();
+	auto offsets = layout.GetOffsets<layout::Position, layout::Velocity, layout::Force>();
+	if (ParticleLayout::HasInvalidOffsets(offsets)) {
+		return;
+	}
+
+	auto span = buffer->EditableSpan<layout::Position, layout::Velocity, layout::Force>(0, offsets);
+	size_t fieldIndex = 0;
+	for (auto&& [position, velocity, force] : span) {
+		Vector3& vel = velocity.vel;
+		Vector3& appliedForce = force.force;
+
+		const float speed = algebra::length(vel);
+		if (speed <= 0.0f) {
 			continue;
 		}
 
-		auto& layout = buffer->GetLayout();
-		auto offsets = layout.GetOffsets<layout::Position, layout::Velocity, layout::Force>();
-		if (ParticleLayout::HasInvalidOffsets(offsets)) {
-			continue;
-		}
-
-		auto span = buffer->EditableSpan<layout::Position, layout::Velocity, layout::Force>(0, offsets);
-		size_t fieldIndex = 0;
-		for (auto&& [position, velocity, force] : span) {
-			Vector3& vel = velocity.vel;
-			Vector3& appliedForce = force.force;
-
-			const float speed = algebra::length(vel);
-			if (speed <= 0.0f) {
+		float factor = 1.0f;
+		if (useRadius) {
+			Vector3 diff = position.pos - center;
+			const float distance = algebra::length(diff);
+			if (distance > scaledRadius) {
+				++fieldIndex;
 				continue;
 			}
-
-			float factor = 1.0f;
-			if (useRadius) {
-				Vector3 diff = position.pos - center;
-				const float distance = algebra::length(diff);
-				if (distance > scaledRadius) {
-					++fieldIndex;
-					continue;
-				}
-				factor = std::pow(std::max(0.0f, 1.0f - distance / scaledRadius), decayInput);
-				if (factor <= 0.0f) {
-					++fieldIndex;
-					continue;
-				}
+			factor = std::pow(std::max(0.0f, 1.0f - distance / scaledRadius), decayInput);
+			if (factor <= 0.0f) {
+				++fieldIndex;
+				continue;
 			}
-
-			const blender::TurbulenceField& field = fields[fieldIndex % fields.size()];
-			Vector3 worldDir = transform.GetTransformMatrix().TransformNormal(field.direction);
-			Vector3 turbulence = TurbulenceComponent(worldDir, vel);
-			appliedForce += turbulence * (field.forceMagnitude * speed * factor);
-
-			++fieldIndex;
 		}
+
+		const blender::TurbulenceField& field = fields[fieldIndex % fields.size()];
+		Vector3 worldDir = transform.GetTransformMatrix().TransformNormal(field.direction);
+		Vector3 turbulence = TurbulenceComponent(worldDir, vel);
+		appliedForce += turbulence * (field.forceMagnitude * speed * factor);
+
+		++fieldIndex;
 	}
 }
 

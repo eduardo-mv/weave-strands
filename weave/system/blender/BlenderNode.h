@@ -30,14 +30,18 @@ public:
 	}
 
 	void ExecuteTriggers(int64_t executionCounter) {
+		size_t index = 0;
 		for (auto* trigger : triggers) {
 			if (trigger) {
 				trigger->triggerCounter++;
 				if(trigger->triggerCounter >= trigger->triggerCountTarget) {
 					trigger->triggerCounter = 0;
-					trigger->Execute(executionCounter);
+					if(TriggerFired(index)) {
+						trigger->Execute(executionCounter);
+					}
 				}
 			}
+			index++;
 		}
 	}
 
@@ -65,6 +69,8 @@ public:
 	virtual ~BlenderNodeBase() {}
 
 	virtual void ExecuteNode() = 0;
+
+	virtual bool TriggerFired([[maybe_unused]] size_t index) { return true; }
 
 	virtual void ConnectInputTo(size_t inputNum, BlenderNodeBase* n, size_t nodeOutput) = 0;
 	virtual void ConnectInputTo(size_t inputNum, std::pair<std::type_index, std::shared_ptr<void>> typedPtr) = 0;

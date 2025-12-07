@@ -56,6 +56,7 @@ public:
     iterator end()   const { return { data + particleCount * stride, stride, &cachedOffsets }; }
 
     size_t size() const { return particleCount; }
+    bool empty() const { return particleCount == 0; }
 
     auto operator[](size_t i) {
         return deref(data + i * stride, std::index_sequence_for<Types...>{});

@@ -47,6 +47,7 @@ set(WEAVE_TEST_SOURCES
     WeaveTests.h
     tests/blender/NodeTests.cpp
     tests/particles/ParticleBufferTests.cpp
+    tests/particles/ParticleBufferSelectorTests.cpp
     tests/particles/ParticleMachineTests.cpp
     tests/scenegraph/SceneGraphTests.cpp
     tests/graphics/core/ImageDataTests.cpp

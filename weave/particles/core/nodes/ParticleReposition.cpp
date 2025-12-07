@@ -44,23 +44,22 @@ void ParticleReposition::ExecuteNode() {
 
 void ParticleReposition::ProcessEmissionBuffers(float delayedInit, float idleToActiveTime) {
 	auto& context = GetContext();
-	for (auto buffer : context.IterateEmissionRanges(triggerCountTarget)) {
-		if (!buffer) {
-			continue;
-		}
+	auto emissionRange = context.GetCurrentEmissionRange(triggerCountTarget);
+	if (!emissionRange) {
+		return;
+	}
 
-		auto& layout = buffer.GetLayout();
-		auto offsets = layout.GetOffsets<layout::Position, layout::LifeTime, layout::Target>();
-		if (ParticleLayout::HasInvalidOffsets(offsets)) {
-			continue;
-		}
+	auto& layout = emissionRange.GetLayout();
+	auto offsets = layout.GetOffsets<layout::Position, layout::LifeTime, layout::Target>();
+	if (ParticleLayout::HasInvalidOffsets(offsets)) {
+		return;
+	}
 
-		auto emissionSpan = buffer.EmissionSpan<layout::Position, layout::LifeTime, layout::Target>(offsets);
-		for (auto&& [position, lifeTime, target] : emissionSpan) {
-			target.time = idleToActiveTime;
-			if (delayedInit == 0.0f) {
-				target.targetPosition = position.pos;
-			}
+	auto emissionSpan = emissionRange.EmissionSpan<layout::Position, layout::LifeTime, layout::Target>(offsets);
+	for (auto&& [position, lifeTime, target] : emissionSpan) {
+		target.time = idleToActiveTime;
+		if (delayedInit == 0.0f) {
+			target.targetPosition = position.pos;
 		}
 	}
 }
@@ -71,70 +70,69 @@ void ParticleReposition::ProcessEditableBuffers(float delayedInit, float idleDis
 	auto& context = GetContext();
 	const float deltaTime = std::max(0.0f, context.sampling.deltaTime);
 
-	for (auto buffer : context.IterateSimulationRanges()) {
-		if (!buffer) {
-			continue;
+	auto* buffer = context.GetCurrentBuffer();
+	if (!buffer) {
+		return;
+	}
+
+	auto& layout = buffer->GetLayout();
+	auto offsets = layout.GetOffsets<
+		layout::Position,
+		layout::LifeTime,
+		layout::Velocity,
+		layout::Force,
+		layout::Target>();
+
+	if (ParticleLayout::HasInvalidOffsets(offsets)) {
+		return;
+	}
+
+	auto editableSpan = buffer->EditableSpan<
+		layout::Position,
+		layout::LifeTime,
+		layout::Velocity,
+		layout::Force,
+		layout::Target>(0, offsets);
+
+	for (auto&& [position, lifeTime, velocity, force, target] : editableSpan) {
+		Vector3& pos = position.pos;
+		const float life = lifeTime.lifeTime;
+		Vector3& vel = velocity.vel;
+		Vector3& appliedForce = force.force;
+		Vector3& targetPos = target.targetPosition;
+		float& timer = target.time;
+
+		if (delayedInit > 0.0f && life < delayedInit) {
+			targetPos = pos;
 		}
 
-		auto& layout = buffer->GetLayout();
-		auto offsets = layout.GetOffsets<
-			layout::Position,
-			layout::LifeTime,
-			layout::Velocity,
-			layout::Force,
-			layout::Target>();
+		Vector3 dir = targetPos - pos;
+		const float distance = algebra::length(dir);
 
-		if (ParticleLayout::HasInvalidOffsets(offsets)) {
-			continue;
-		}
+		if (distance > idleDistance) {
+			if (life >= timer && distance > 0.0f) {
+				const float mForce = std::min(1.0f, distance / forceFieldDistance);
+				appliedForce += (mForce * forceMagnitude / distance) * dir;
 
-		auto editableSpan = buffer->EditableSpan<
-			layout::Position,
-			layout::LifeTime,
-			layout::Velocity,
-			layout::Force,
-			layout::Target>(0, offsets);
-
-		for (auto&& [position, lifeTime, velocity, force, target] : editableSpan) {
-			Vector3& pos = position.pos;
-			const float life = lifeTime.lifeTime;
-			Vector3& vel = velocity.vel;
-			Vector3& appliedForce = force.force;
-			Vector3& targetPos = target.targetPosition;
-			float& timer = target.time;
-
-			if (delayedInit > 0.0f && life < delayedInit) {
-				targetPos = pos;
+				const float eForce = std::min(1.0f, distance / velocityFieldDistance);
+				const float currentSpeed = algebra::length(vel);
+				Vector3 blended = interpolation::lerp(algebra::normalizesafe(dir), algebra::normalizesafe(vel), eForce);
+				vel = algebra::normalizesafe(blended) * currentSpeed;
 			}
-
-			Vector3 dir = targetPos - pos;
-			const float distance = algebra::length(dir);
-
-			if (distance > idleDistance) {
-				if (life >= timer && distance > 0.0f) {
-					const float mForce = std::min(1.0f, distance / forceFieldDistance);
-					appliedForce += (mForce * forceMagnitude / distance) * dir;
-
-					const float eForce = std::min(1.0f, distance / velocityFieldDistance);
-					const float currentSpeed = algebra::length(vel);
-					Vector3 blended = interpolation::lerp(algebra::normalizesafe(dir), algebra::normalizesafe(vel), eForce);
-					vel = algebra::normalizesafe(blended) * currentSpeed;
+		}
+		else {
+			if (timer < 0.0f) {
+				timer += deltaTime;
+				vel *= damping;
+				if (timer > 0.0f) {
+					timer = life + idleToActiveTime;
 				}
+			}
+			else if (life >= timer) {
+				timer = -activeToIdleTime;
 			}
 			else {
-				if (timer < 0.0f) {
-					timer += deltaTime;
-					vel *= damping;
-					if (timer > 0.0f) {
-						timer = life + idleToActiveTime;
-					}
-				}
-				else if (life >= timer) {
-					timer = -activeToIdleTime;
-				}
-				else {
-					timer = std::max(timer, life + idleToActiveTime);
-				}
+				timer = std::max(timer, life + idleToActiveTime);
 			}
 		}
 	}

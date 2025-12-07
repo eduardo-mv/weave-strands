@@ -23,15 +23,15 @@ struct ParticleTestWriter : wp::ParticleNode<> {
 	void ExecuteNode() override {
 		wroteCount = 0;
 		auto& context = GetContext();
-		for (auto buffer : context.IterateEmissionRanges(triggerCountTarget)) {
-			if (!buffer) {
-				continue;
-			}
-			for (auto&& [life, maxLife] : buffer.EmissionSpan<wp::layout::LifeTime, wp::layout::MaxLifeTime>()) {
-				life.lifeTime = lifeValue;
-				maxLife.maxLifeTime = maxLifeValue;
-				++wroteCount;
-			}
+		auto emissionRange = context.GetCurrentEmissionRange(triggerCountTarget);
+		if (!emissionRange) {
+			return;
+		}
+
+		for (auto&& [life, maxLife] : emissionRange.EmissionSpan<wp::layout::LifeTime, wp::layout::MaxLifeTime>()) {
+			life.lifeTime = lifeValue;
+			maxLife.maxLifeTime = maxLifeValue;
+			++wroteCount;
 		}
 	}
 
@@ -48,18 +48,18 @@ struct ParticleTestInspector : wp::ParticleNode<> {
 		verifiedCount = 0;
 		mismatchCount = 0;
 		auto& context = GetContext();
-		for (auto buffer : context.IterateSimulationRanges()) {
-			if (!buffer) {
-				continue;
-			}
-			for (auto&& [life, maxLife] : buffer->EditableSpan<wp::layout::LifeTime, wp::layout::MaxLifeTime>()) {
-				const bool matches = std::abs(life.lifeTime - lifeValue) < 1e-5f
-					&& std::abs(maxLife.maxLifeTime - maxLifeValue) < 1e-5f;
-				if (matches) {
-					++verifiedCount;
-				} else {
-					++mismatchCount;
-				}
+		auto* buffer = context.GetCurrentBuffer();
+		if (!buffer) {
+			return;
+		}
+
+		for (auto&& [life, maxLife] : buffer->EditableSpan<wp::layout::LifeTime, wp::layout::MaxLifeTime>()) {
+			const bool matches = std::abs(life.lifeTime - lifeValue) < 1e-5f
+				&& std::abs(maxLife.maxLifeTime - maxLifeValue) < 1e-5f;
+			if (matches) {
+				++verifiedCount;
+			} else {
+				++mismatchCount;
 			}
 		}
 	}

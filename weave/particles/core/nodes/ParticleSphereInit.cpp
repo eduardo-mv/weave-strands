@@ -49,43 +49,42 @@ void ParticleSphereInit::ExecuteNode() {
 	const float minAlpha = -alphaHalf * 0.5f;
 	const float minBeta = -betaHalf * 0.5f;
 
-	for (auto buffer : context.IterateEmissionRanges(triggerCountTarget)) {
-		if (!buffer) {
-			continue;
+	auto emissionRange = context.GetCurrentEmissionRange(triggerCountTarget);
+	if (!emissionRange) {
+		return;
+	}
+
+	auto const& layout = emissionRange.GetLayout();
+	const size_t particleSize = layout.particleByteSize;
+	if (particleSize == 0) {
+		return;
+	}
+
+	const auto layoutPositionOffset = layout.GetOffsets<layout::Position>();
+	if (ParticleLayout::HasInvalidOffsets(layoutPositionOffset)) {
+		return;
+	}
+
+	if (layoutPositionOffset[0] + sizeof(Vector3) > particleSize) {
+		return;
+	}
+
+	for (auto&& [position] : emissionRange.EmissionSpan<layout::Position>(layoutPositionOffset)) {
+		Vector3& pos = position.pos;
+		const float radius = RandomRadius(minRadius, maxRadius);
+		const float theta = RandomAngle(minAlpha, minAlpha + alphaHalf);
+		const float phi = RandomAngle(minBeta, minBeta + betaHalf);
+
+		const float sinTheta = std::sin(theta);
+		pos.x = radius * sinTheta * std::cos(phi);
+		pos.y = radius * sinTheta * std::sin(phi);
+		pos.z = radius * std::cos(theta);
+
+		if (alphaHemisphere) {
+			pos.x = std::abs(pos.x);
 		}
-
-		auto const& layout = buffer.GetLayout();
-		const size_t particleSize = layout.particleByteSize;
-		if (particleSize == 0) {
-			continue;
-		}
-
-		const auto layoutPositionOffset = layout.GetOffsets<layout::Position>();
-		if (ParticleLayout::HasInvalidOffsets(layoutPositionOffset)) {
-			continue;
-		}
-
-		if (layoutPositionOffset[0] + sizeof(Vector3) > particleSize) {
-			continue;
-		}
-
-		for (auto&& [position] : buffer.EmissionSpan<layout::Position>(layoutPositionOffset)) {
-			Vector3& pos = position.pos;
-			const float radius = RandomRadius(minRadius, maxRadius);
-			const float theta = RandomAngle(minAlpha, minAlpha + alphaHalf);
-			const float phi = RandomAngle(minBeta, minBeta + betaHalf);
-
-			const float sinTheta = std::sin(theta);
-			pos.x = radius * sinTheta * std::cos(phi);
-			pos.y = radius * sinTheta * std::sin(phi);
-			pos.z = radius * std::cos(theta);
-
-			if (alphaHemisphere) {
-				pos.x = std::abs(pos.x);
-			}
-			if (betaHemisphere) {
-				pos.y = std::abs(pos.y);
-			}
+		if (betaHemisphere) {
+			pos.y = std::abs(pos.y);
 		}
 	}
 }

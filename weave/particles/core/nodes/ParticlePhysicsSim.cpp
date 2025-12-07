@@ -16,7 +16,8 @@ ParticlePhysicsSim::ParticlePhysicsSim() {
 
 void ParticlePhysicsSim::ExecuteNode() {
 	auto& context = GetContext();
-	if (context.BufferCount() == 0) {
+	auto* buffer = context.GetCurrentBuffer();
+	if (!buffer) {
 		return;
 	}
 
@@ -25,35 +26,29 @@ void ParticlePhysicsSim::ExecuteNode() {
 		return;
 	}
 
+	auto& layout = buffer->GetLayout();
+	auto offsets = layout.GetOffsets<layout::Position, layout::Velocity, layout::Force, layout::Mass>();
+	if (ParticleLayout::HasInvalidOffsets(offsets)) {
+		return;
+	}
+
 	const float dampingBase = std::clamp(this->input.template Ref<LinearDamping>(), 0.0f, 1.0f);
 	const float damping = dampingBase > 0.0f ? std::pow(dampingBase, deltaTime) : 0.0f;
 	const Vector3 gravity = this->input.template Ref<Gravity>() * deltaTime;
 
-	for (auto buffer : context.IterateSimulationRanges()) {
-		if (!buffer) {
-			continue;
-		}
+	auto editableSpan = buffer->EditableSpan<layout::Position, layout::Velocity, layout::Force, layout::Mass>(0, offsets);
+	for (auto&& [position, velocity, force, mass] : editableSpan) {
+		Vector3& pos = position.pos;
+		Vector3& vel = velocity.vel;
+		Vector3& appliedForce = force.force;
+		const float particleMass = std::max(mass.mass, 0.0001f);
 
-		auto& layout = buffer->GetLayout();
-		auto offsets = layout.GetOffsets<layout::Position, layout::Velocity, layout::Force, layout::Mass>();
-		if (ParticleLayout::HasInvalidOffsets(offsets)) {
-			continue;
-		}
+		pos += vel * deltaTime;
 
-		auto editableSpan = buffer->EditableSpan<layout::Position, layout::Velocity, layout::Force, layout::Mass>(0, offsets);
-		for (auto&& [position, velocity, force, mass] : editableSpan) {
-			Vector3& pos = position.pos;
-			Vector3& vel = velocity.vel;
-			Vector3& appliedForce = force.force;
-			const float particleMass = std::max(mass.mass, 0.0001f);
+		const Vector3 acceleration = appliedForce * (deltaTime / particleMass) + gravity;
+		vel = (vel + acceleration) * damping;
 
-			pos += vel * deltaTime;
-
-			const Vector3 acceleration = appliedForce * (deltaTime / particleMass) + gravity;
-			vel = (vel + acceleration) * damping;
-
-			appliedForce = Vector3{};
-		}
+		appliedForce = Vector3{};
 	}
 }
 

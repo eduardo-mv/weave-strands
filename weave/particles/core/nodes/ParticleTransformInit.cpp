@@ -78,17 +78,14 @@ void ParticleTransformInit::ExecuteNode() {
 	};
 
 	if (applyEmission) {
-		for (auto buffer : context.IterateEmissionRanges(triggerCountTarget)) {
-			if (!buffer) {
-				continue;
-			}
-
-			auto& layout = buffer.GetLayout();
+		auto emissionRange = context.GetCurrentEmissionRange(triggerCountTarget);
+		if (emissionRange) {
+			auto& layout = emissionRange.GetLayout();
 
 			if (modifyPositions) {
 				const auto positionOffsets = layout.GetOffsets<layout::Position>();
 				if (!ParticleLayout::HasInvalidOffsets(positionOffsets)) {
-					auto emissionSpan = buffer.EmissionSpan<layout::Position>(positionOffsets);
+					auto emissionSpan = emissionRange.EmissionSpan<layout::Position>(positionOffsets);
 					for (auto&& [position] : emissionSpan) {
 						transformPosition(position.pos);
 					}
@@ -98,7 +95,7 @@ void ParticleTransformInit::ExecuteNode() {
 			if (modifyVelocities) {
 				const auto velocityOffsets = layout.GetOffsets<layout::Velocity>();
 				if (!ParticleLayout::HasInvalidOffsets(velocityOffsets)) {
-					auto emissionSpan = buffer.EmissionSpan<layout::Velocity>(velocityOffsets);
+					auto emissionSpan = emissionRange.EmissionSpan<layout::Velocity>(velocityOffsets);
 					for (auto&& [velocity] : emissionSpan) {
 						transformVelocity(velocity.vel);
 					}
@@ -108,30 +105,29 @@ void ParticleTransformInit::ExecuteNode() {
 	}
 
 	if (applyEditable) {
-		for (auto buffer : context.IterateSimulationRanges()) {
-			if (!buffer) {
-				continue;
-			}
+		auto* buffer = context.GetCurrentBuffer();
+		if (!buffer) {
+			return;
+		}
 
-			auto& layout = buffer->GetLayout();
+		auto& layout = buffer->GetLayout();
 
-			if (modifyPositions) {
-				const auto positionOffsets = layout.GetOffsets<layout::Position>();
-				if (!ParticleLayout::HasInvalidOffsets(positionOffsets)) {
-					auto editableSpan = buffer->EditableSpan<layout::Position>(0, positionOffsets);
-					for (auto&& [position] : editableSpan) {
-						transformPosition(position.pos);
-					}
+		if (modifyPositions) {
+			const auto positionOffsets = layout.GetOffsets<layout::Position>();
+			if (!ParticleLayout::HasInvalidOffsets(positionOffsets)) {
+				auto editableSpan = buffer->EditableSpan<layout::Position>(0, positionOffsets);
+				for (auto&& [position] : editableSpan) {
+					transformPosition(position.pos);
 				}
 			}
+		}
 
-			if (modifyVelocities) {
-				const auto velocityOffsets = layout.GetOffsets<layout::Velocity>();
-				if (!ParticleLayout::HasInvalidOffsets(velocityOffsets)) {
-					auto editableSpan = buffer->EditableSpan<layout::Velocity>(0, velocityOffsets);
-					for (auto&& [velocity] : editableSpan) {
-						transformVelocity(velocity.vel);
-					}
+		if (modifyVelocities) {
+			const auto velocityOffsets = layout.GetOffsets<layout::Velocity>();
+			if (!ParticleLayout::HasInvalidOffsets(velocityOffsets)) {
+				auto editableSpan = buffer->EditableSpan<layout::Velocity>(0, velocityOffsets);
+				for (auto&& [velocity] : editableSpan) {
+					transformVelocity(velocity.vel);
 				}
 			}
 		}

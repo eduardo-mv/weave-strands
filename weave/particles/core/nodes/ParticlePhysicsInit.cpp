@@ -28,7 +28,14 @@ ParticlePhysicsInit::ParticlePhysicsInit() {
 
 void ParticlePhysicsInit::ExecuteNode() {
 	auto& context = GetContext();
-	if (context.BufferCount() == 0) {
+	auto emissionRange = context.GetCurrentEmissionRange(triggerCountTarget);
+	if (!emissionRange.buffer) {
+		return;
+	}
+
+	auto& layout = emissionRange.buffer->GetLayout();
+	auto offsets = layout.GetOffsets<layout::Force, layout::Mass, layout::LifeTime, layout::MaxLifeTime>();
+	if (ParticleLayout::HasInvalidOffsets(offsets)) {
 		return;
 	}
 
@@ -42,24 +49,12 @@ void ParticlePhysicsInit::ExecuteNode() {
 	const float minMass = std::min(inputMinMass, inputMaxMass);
 	const float maxMass = std::max(inputMinMass, inputMaxMass);
 
-	for (auto buffer : context.IterateEmissionRanges(triggerCountTarget)) {
-		if (!buffer) {
-			continue;
-		}
-
-		auto& layout = buffer.GetLayout();
-		auto offsets = layout.GetOffsets<layout::Force, layout::Mass, layout::LifeTime, layout::MaxLifeTime>();
-		if (ParticleLayout::HasInvalidOffsets(offsets)) {
-			continue;
-		}
-
-		auto span = buffer.EmissionSpan<layout::Force, layout::Mass, layout::LifeTime, layout::MaxLifeTime>(offsets);
-		for (auto&& [force, mass, life, maxLife] : span) {
-			force.force = Vector3{};
-			mass.mass = RandomBetween(minMass, maxMass);
-			maxLife.maxLifeTime = RandomBetween(minAge, maxAge);
-			life.lifeTime = 0.0f;
-		}
+	auto span = emissionRange.EmissionSpan<layout::Force, layout::Mass, layout::LifeTime, layout::MaxLifeTime>(offsets);
+	for (auto&& [force, mass, life, maxLife] : span) {
+		force.force = Vector3{};
+		mass.mass = RandomBetween(minMass, maxMass);
+		maxLife.maxLifeTime = RandomBetween(minAge, maxAge);
+		life.lifeTime = 0.0f;
 	}
 }
 

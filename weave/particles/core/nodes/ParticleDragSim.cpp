@@ -32,41 +32,40 @@ void ParticleDragSim::ExecuteNode() {
 	const float maxCap = maxCapInput < 0.0f ? std::numeric_limits<float>::max() : maxCapInput;
 	const float breakCap = std::max(0.0f, this->input.template Ref<BreakVelocity>());
 
-	for (auto buffer : context.IterateSimulationRanges()) {
-		if (!buffer) {
+	auto* buffer = context.GetCurrentBuffer();
+	if (!buffer) {
+		return;
+	}
+
+	auto& layout = buffer->GetLayout();
+	auto offsets = layout.GetOffsets<layout::Velocity, layout::Force>();
+	if (ParticleLayout::HasInvalidOffsets(offsets)) {
+		return;
+	}
+
+	auto editableSpan = buffer->EditableSpan<layout::Velocity, layout::Force>(0, offsets);
+	for (auto&& [velocity, force] : editableSpan) {
+		Vector3& vel = velocity.vel;
+		Vector3& appliedForce = force.force;
+
+		float speed = algebra::length(vel);
+		if (speed < breakCap) {
+			vel = Vector3{};
 			continue;
 		}
 
-		auto& layout = buffer->GetLayout();
-		auto offsets = layout.GetOffsets<layout::Velocity, layout::Force>();
-		if (ParticleLayout::HasInvalidOffsets(offsets)) {
-			continue;
-		}
-
-		auto editableSpan = buffer->EditableSpan<layout::Velocity, layout::Force>(0, offsets);
-		for (auto&& [velocity, force] : editableSpan) {
-			Vector3& vel = velocity.vel;
-			Vector3& appliedForce = force.force;
-
-			float speed = algebra::length(vel);
-			if (speed < breakCap) {
-				vel = Vector3{};
-				continue;
+		if (speed > 0.0f) {
+			if (speed > maxCap) {
+				vel *= (maxCap / speed);
+				speed = maxCap;
+			}
+			if (speed < minCap) {
+				vel *= (minCap / speed);
+				speed = minCap;
 			}
 
-			if (speed > 0.0f) {
-				if (speed > maxCap) {
-					vel *= (maxCap / speed);
-					speed = maxCap;
-				}
-				if (speed < minCap) {
-					vel *= (minCap / speed);
-					speed = minCap;
-				}
-
-				const float drag = -(linearDrag * speed + exponentialDrag * speed * speed) / speed;
-				appliedForce += vel * drag;
-			}
+			const float drag = -(linearDrag * speed + exponentialDrag * speed * speed) / speed;
+			appliedForce += vel * drag;
 		}
 	}
 }

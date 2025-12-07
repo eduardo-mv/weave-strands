@@ -75,23 +75,22 @@ void ParticleLifeAdjustSim::ExecuteNode() {
 void ParticleLifeAdjustSim::AdjustAllParticles(float minInput, float maxInput, bool relativeMin, bool relativeMax, bool clampUpper) {
 	auto& context = GetContext();
 
-	for (auto buffer : context.IterateSimulationRanges()) {
-		if (!buffer) {
-			continue;
-		}
+	auto* buffer = context.GetCurrentBuffer();
+	if (!buffer) {
+		return;
+	}
 
-		auto& layout = buffer->GetLayout();
-		auto offsets = layout.GetOffsets<layout::LifeTime, layout::MaxLifeTime>();
-		if (ParticleLayout::HasInvalidOffsets(offsets)) {
-			continue;
-		}
+	auto& layout = buffer->GetLayout();
+	auto offsets = layout.GetOffsets<layout::LifeTime, layout::MaxLifeTime>();
+	if (ParticleLayout::HasInvalidOffsets(offsets)) {
+		return;
+	}
 
-		auto span = buffer->EditableSpan<layout::LifeTime, layout::MaxLifeTime>(0, offsets);
-		for (auto&& [life, maxLife] : span) {
-			float lower = relativeMin ? minInput * maxLife.maxLifeTime : minInput;
-			float upper = relativeMax ? maxInput * maxLife.maxLifeTime : maxInput;
-			ApplyClamp(life.lifeTime, maxLife.maxLifeTime, lower, upper, clampUpper);
-		}
+	auto span = buffer->EditableSpan<layout::LifeTime, layout::MaxLifeTime>(0, offsets);
+	for (auto&& [life, maxLife] : span) {
+		float lower = relativeMin ? minInput * maxLife.maxLifeTime : minInput;
+		float upper = relativeMax ? maxInput * maxLife.maxLifeTime : maxInput;
+		ApplyClamp(life.lifeTime, maxLife.maxLifeTime, lower, upper, clampUpper);
 	}
 }
 
@@ -102,28 +101,27 @@ void ParticleLifeAdjustSim::AdjustParticlesInRadius(float radiusSq,
 
 	auto& context = GetContext();
 
-	for (auto buffer : context.IterateSimulationRanges()) {
-		if (!buffer) {
+	auto* buffer = context.GetCurrentBuffer();
+	if (!buffer) {
+		return;
+	}
+
+	auto& layout = buffer->GetLayout();
+	auto offsets = layout.GetOffsets<layout::Position, layout::LifeTime, layout::MaxLifeTime>();
+	if (ParticleLayout::HasInvalidOffsets(offsets)) {
+		return;
+	}
+
+	auto span = buffer->EditableSpan<layout::Position, layout::LifeTime, layout::MaxLifeTime>(0, offsets);
+	for (auto&& [position, life, maxLife] : span) {
+		Vector3 diff = position.pos - center;
+		if (algebra::lengthSqr(diff) > radiusSq) {
 			continue;
 		}
 
-		auto& layout = buffer->GetLayout();
-		auto offsets = layout.GetOffsets<layout::Position, layout::LifeTime, layout::MaxLifeTime>();
-		if (ParticleLayout::HasInvalidOffsets(offsets)) {
-			continue;
-		}
-
-		auto span = buffer->EditableSpan<layout::Position, layout::LifeTime, layout::MaxLifeTime>(0, offsets);
-		for (auto&& [position, life, maxLife] : span) {
-			Vector3 diff = position.pos - center;
-			if (algebra::lengthSqr(diff) > radiusSq) {
-				continue;
-			}
-
-			float lower = relativeMin ? minInput * maxLife.maxLifeTime : minInput;
-			float upper = relativeMax ? maxInput * maxLife.maxLifeTime : maxInput;
-			ApplyClamp(life.lifeTime, maxLife.maxLifeTime, lower, upper, clampUpper);
-		}
+		float lower = relativeMin ? minInput * maxLife.maxLifeTime : minInput;
+		float upper = relativeMax ? maxInput * maxLife.maxLifeTime : maxInput;
+		ApplyClamp(life.lifeTime, maxLife.maxLifeTime, lower, upper, clampUpper);
 	}
 }
 

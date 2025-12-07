@@ -93,6 +93,7 @@ private:
 	
 
 	std::vector<BufferData> buffers;
+	size_t currentTargetBuffer{};
 
 public:
 	void ClearBuffers() { buffers.clear(); }
@@ -109,30 +110,32 @@ public:
 	}
 
 	size_t BufferCount() const { return buffers.size(); }
+	size_t GetCurrentTargetBufferIndex() const { return currentTargetBuffer; }
+	void SetCurrentTargetBufferIndex(size_t target) { currentTargetBuffer = target; }
 
 	void AddEmissionParticles(uint64_t amount) {
-		for(auto& buffer : buffers){
-			buffer.PushEmission(amount);
+		if(auto buffer = GetCurrentBufferData()) {
+			buffer->PushEmission(amount);
 		}
 	}
 
 	void CommitEmissionparticles() {
-		for(auto& buffer : buffers){
-			buffer.CommitEmission();
+		if(auto buffer = GetCurrentBufferData()) {
+			buffer->CommitEmission();
 		}
 	}
 
-	auto IterateEmissionRanges(size_t backSteps) {
-		return buffers | std::views::transform([backSteps](BufferData& data) {
-			return data.GetEmissionRange(backSteps);
-		});
+	auto GetCurrentEmissionRange(size_t backSteps) {
+		if(auto buffer = GetCurrentBufferData()) {
+			return buffer->GetEmissionRange(backSteps);
+		}
+		return EmissionRange{};
 	}
 
-	auto IterateSimulationRanges() {
-		return buffers | std::views::transform([](BufferData& data) {
-			return data.buffer.get();
-		});
-	}
+	auto* GetCurrentBuffer() { return currentTargetBuffer < buffers.size() ? buffers[currentTargetBuffer].buffer.get() : nullptr; }
+
+private:
+	BufferData* GetCurrentBufferData() { return currentTargetBuffer < buffers.size() ? &buffers[currentTargetBuffer] : nullptr; }
 };
 
 } // namespace weave::particles
