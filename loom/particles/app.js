@@ -3,6 +3,7 @@ const CONVERSION_HEADER = "weave/system/blender/nodes/ConversionNodes.h";
 const CONDITIONAL_HEADER = "weave/system/blender/nodes/ConditionalNodes.h";
 const EASING_NODES_HEADER = "weave/system/blender/nodes/EasingNodes.h";
 const EASING_HEADER = "weave/system/math/Easing.h";
+const TRANSFORM_HEADER = "weave/system/math/Transform.h";
 const RNG_HEADER = "weave/system/blender/nodes/RngNodes.h";
 const NOISE_HEADER = "weave/system/blender/nodes/NoiseNodes.h";
 const SIGNAL_SAMPLER_HEADER = "weave/animation/blender/samplers/SignalSampler.h";
@@ -61,6 +62,9 @@ function normalizeDataType(value) {
       return "vec3";
     case "vector4":
       return "vec4";
+    case "quaternion":
+    case "quat":
+      return "quat";
     case "int32":
     case "i32":
     case "int":
@@ -76,6 +80,9 @@ function normalizeDataType(value) {
 function formatDataTypeLabel(dataType) {
   if (!dataType) {
     return null;
+  }
+  if (dataType === "quat") {
+    return "Quaternion";
   }
   const variant = TYPE_VARIANT_MAP[dataType];
   if (variant?.label) {
@@ -108,7 +115,7 @@ const PARTICLE_NODES = [
       { key: "MinFrequency", label: "Min Frequency", cppAccessor: "MinFrequency", defaultValue: "0.0f", dataType: "float" },
       { key: "MaxFrequency", label: "Max Frequency", cppAccessor: "MaxFrequency", defaultValue: "0.0f", dataType: "float" },
       { key: "MaxRuntime", label: "Max Runtime (seconds)", cppAccessor: "MaxRuntime", defaultValue: "-1.0", dataType: "float" },
-      { key: "MaxParticles", label: "Max Particles", cppAccessor: "MaxParticles", defaultValue: "2048", dataType: "float" },
+      { key: "MaxParticles", label: "Max Particles", cppAccessor: "MaxParticles", defaultValue: "size_t(-1)", dataType: "uint", hint: "Set to size_t(-1) for unlimited" },
       { key: "ResetSignal", label: "Reset Signal", cppAccessor: "ResetSignal", defaultValue: "0u" }
     ]
   },
@@ -124,9 +131,9 @@ const PARTICLE_NODES = [
       { key: "MinX", label: "Min X", cppAccessor: "MinX", defaultValue: "0.0f", dataType: "float" },
       { key: "MinY", label: "Min Y", cppAccessor: "MinY", defaultValue: "0.0f", dataType: "float" },
       { key: "MinZ", label: "Min Z", cppAccessor: "MinZ", defaultValue: "0.0f", dataType: "float" },
-      { key: "MaxX", label: "Max X", cppAccessor: "MaxX", defaultValue: "1.0f", dataType: "float" },
-      { key: "MaxY", label: "Max Y", cppAccessor: "MaxY", defaultValue: "1.0f", dataType: "float" },
-      { key: "MaxZ", label: "Max Z", cppAccessor: "MaxZ", defaultValue: "1.0f", dataType: "float" }
+      { key: "MaxX", label: "Max X", cppAccessor: "MaxX", defaultValue: "0.5f", dataType: "float" },
+      { key: "MaxY", label: "Max Y", cppAccessor: "MaxY", defaultValue: "0.5f", dataType: "float" },
+      { key: "MaxZ", label: "Max Z", cppAccessor: "MaxZ", defaultValue: "0.5f", dataType: "float" }
     ]
   },
   {
@@ -186,11 +193,11 @@ const PARTICLE_NODES = [
     cppType: "wp::ParticleTransformInit",
     typeGroup: "Initializer",
     include: "weave/particles/core/nodes/ParticleTransformInit.h",
-    varPrefix: "transform",
+    varPrefix: "transformInit",
     inputs: [
       { key: "TransformInput", label: "Transform", cppAccessor: "TransformInput", defaultValue: "Transform{}", dataType: "transform" },
       { key: "ApplyEmission", label: "Apply Emission", cppAccessor: "ApplyEmission", defaultValue: "true", dataType: "bool" },
-      { key: "ApplyEditable", label: "Apply Editable", cppAccessor: "ApplyEditable", defaultValue: "true", dataType: "bool" },
+      { key: "ApplyEditable", label: "Apply Editable", cppAccessor: "ApplyEditable", defaultValue: "false", dataType: "bool" },
       { key: "TranslatePosition", label: "Translate Position", cppAccessor: "TranslatePosition", defaultValue: "true", dataType: "bool" },
       { key: "RotatePosition", label: "Rotate Position", cppAccessor: "RotatePosition", defaultValue: "true", dataType: "bool" },
       { key: "ScalePosition", label: "Scale Position", cppAccessor: "ScalePosition", defaultValue: "false", dataType: "bool" },
@@ -517,6 +524,33 @@ const PORT_HINTS = {
     },
     outputs: {
       Value: "Sampled easing value at the current local time"
+    }
+  },
+  ConstTransform: {
+    outputs: {
+      Value: "Constant transform output"
+    }
+  },
+  ComposeTransform: {
+    inputs: {
+      Position: "Translation applied to the transform",
+      Quaternion: "Quaternion rotation (takes precedence when linked)",
+      Euler: "Euler rotation fallback (pitch, yaw, roll in radians)",
+      Scale: "Scale applied per axis"
+    },
+    outputs: {
+      Transform: "Composed transform result"
+    }
+  },
+  DecomposeTransform: {
+    inputs: {
+      Transform: "Transform to split into components"
+    },
+    outputs: {
+      Position: "Extracted translation vector",
+      Quaternion: "Extracted quaternion rotation",
+      Euler: "Rotation expressed as Euler angles (radians)",
+      Scale: "Extracted scale vector"
     }
   }
 };
@@ -1489,6 +1523,68 @@ function buildConversionNodes() {
   return nodes;
 }
 
+function buildTransformNodes() {
+  return [
+    {
+      typeId: "ConstTransform",
+      category: "Math",
+      typeGroup: "Transform",
+      label: "Const Transform",
+      description: "Outputs a fixed Transform value.",
+      cppType: "wb::ConstNode<weave::Transform>",
+      include: ARITHMETIC_HEADER,
+      includes: [TRANSFORM_HEADER],
+      varPrefix: "constTransform",
+      constructorArgs: [
+        { key: "Value0", label: "Transform", defaultValue: "Transform{}", dataType: "transform" }
+      ],
+      outputs: [
+        { key: "Value", label: "Transform", cppAccessor: "0", accessorType: "index", dataType: "transform" }
+      ]
+    },
+    {
+      typeId: "ComposeTransform",
+      category: "Conversion",
+      typeGroup: "Transform",
+      label: "Compose Transform",
+      description: "Builds a Transform from position, rotation, and scale, preferring quaternion input when linked.",
+      cppType: "wb::ComposeTransformNode",
+      include: CONVERSION_HEADER,
+      includes: [TRANSFORM_HEADER],
+      varPrefix: "composeTransform",
+      inputs: [
+        { key: "Position", label: "Position", cppAccessor: "PositionInput", accessorType: "enum", dataType: "vec3", defaultValue: "Vector3{0.0f, 0.0f, 0.0f}" },
+        { key: "Quaternion", label: "Rotation (Quat)", cppAccessor: "QuaternionInput", accessorType: "enum", dataType: "quat", defaultValue: "Quaternion(Vector3{0.0f, 0.0f, 0.0f})" },
+        { key: "Euler", label: "Rotation (Euler)", cppAccessor: "EulerInput", accessorType: "enum", dataType: "vec3", defaultValue: "Vector3{0.0f, 0.0f, 0.0f}" },
+        { key: "Scale", label: "Scale", cppAccessor: "ScaleInput", accessorType: "enum", dataType: "vec3", defaultValue: "Vector3{1.0f, 1.0f, 1.0f}" }
+      ],
+      outputs: [
+        { key: "Transform", label: "Transform", cppAccessor: "ResultOutput", accessorType: "enum", dataType: "transform" }
+      ]
+    },
+    {
+      typeId: "DecomposeTransform",
+      category: "Conversion",
+      typeGroup: "Transform",
+      label: "Decompose Transform",
+      description: "Splits a Transform into position, rotation, and scale components.",
+      cppType: "wb::DecomposeTransformNode",
+      include: CONVERSION_HEADER,
+      includes: [TRANSFORM_HEADER],
+      varPrefix: "decomposeTransform",
+      inputs: [
+        { key: "Transform", label: "Transform", cppAccessor: "TransformInput", accessorType: "enum", dataType: "transform", defaultValue: "Transform{}" }
+      ],
+      outputs: [
+        { key: "Position", label: "Position", cppAccessor: "PositionOutput", accessorType: "enum", dataType: "vec3" },
+        { key: "Quaternion", label: "Rotation (Quat)", cppAccessor: "QuaternionOutput", accessorType: "enum", dataType: "quat" },
+        { key: "Euler", label: "Rotation (Euler)", cppAccessor: "EulerOutput", accessorType: "enum", dataType: "vec3" },
+        { key: "Scale", label: "Scale", cppAccessor: "ScaleOutput", accessorType: "enum", dataType: "vec3" }
+      ]
+    }
+  ];
+}
+
 function buildEasingNodes() {
   const curveOptions = EASING_FUNCTIONS.map(name => ({
     label: easingLabelFromName(name),
@@ -1704,9 +1800,12 @@ const GENERAL_NODES = [
   ...buildEasingNodes()
 ];
 
-applyPortHints(GENERAL_NODES);
+const TRANSFORM_NODES = buildTransformNodes();
 
-const NODE_LIBRARY = [...PARTICLE_NODES, ...ANIMATION_NODES, ...GENERAL_NODES];
+applyPortHints(GENERAL_NODES);
+applyPortHints(TRANSFORM_NODES);
+
+const NODE_LIBRARY = [...PARTICLE_NODES, ...ANIMATION_NODES, ...GENERAL_NODES, ...TRANSFORM_NODES];
 
 const CATEGORY_ORDER = ["Particles", "Animation", "Math", "Conditional", "Conversion", "Easing", "Noise", "Random"];
 
@@ -1924,8 +2023,10 @@ function stopWheelPropagation(element) {
 }
 
 let copyFeedbackTimer = null;
+let clipboardData = null;
 let transformModalState = null;
 let skipCanvasClickUntil = 0;
+let lastPointerWorld = null;
 
 function arraysEqualShallow(a = [], b = []) {
   if (a.length !== b.length) {
@@ -1950,7 +2051,7 @@ function setSelectedNodes(nodeIds, primaryId = null, options = {}) {
       return;
     }
     const node = getNodeById(id);
-    if (!node || isRootNode(node)) {
+    if (!node) {
       return;
     }
     validIds.push(id);
@@ -1987,7 +2088,7 @@ function isClickSuppressed() {
 }
 
 function addNodeToSelection(nodeId) {
-  if (!nodeId || isRootNodeId(nodeId)) {
+  if (!nodeId) {
     return;
   }
   if (isNodeSelected(nodeId)) {
@@ -2034,6 +2135,228 @@ function handleNodeClick(event, nodeId) {
     setSelectedNodes([nodeId], nodeId);
     bringNodeToFront(nodeId);
   }
+}
+
+function getSelectedNodes() {
+  return state.selectedNodeIds
+    .map(id => getNodeById(id))
+    .filter(node => node && !isRootNode(node));
+}
+function clonePlainObject(value) {
+  if (!value) {
+    return {};
+  }
+  try {
+    return JSON.parse(JSON.stringify(value));
+  } catch {
+    const clone = {};
+    Object.keys(value).forEach(key => {
+      clone[key] = value[key];
+    });
+    return clone;
+  }
+}
+
+function ensureInputDefaults(target, defInputs = []) {
+  (defInputs || []).forEach(input => {
+    if (!input?.key) {
+      return;
+    }
+    if (!(input.key in target)) {
+      target[input.key] = input.defaultValue ?? "";
+    }
+  });
+}
+
+function ensureOptionDefaults(target, defOptions = []) {
+  (defOptions || []).forEach(option => {
+    if (!option?.key) {
+      return;
+    }
+    if (!(option.key in target)) {
+      target[option.key] = option.defaultValue ?? false;
+    }
+  });
+}
+
+function ensureConstructorDefaults(target, defConstructors = []) {
+  (defConstructors || []).forEach(arg => {
+    if (!arg?.key) {
+      return;
+    }
+    if (!(arg.key in target)) {
+      target[arg.key] = arg.defaultValue ?? "";
+    }
+  });
+}
+
+function ensureCustomValueDefaults(target, defSetters = []) {
+  (defSetters || []).forEach(setter => {
+    if (!setter?.key) {
+      return;
+    }
+    if (!(setter.key in target)) {
+      target[setter.key] = setter.defaultValue ?? "";
+    }
+  });
+}
+
+function copySelectionToClipboard() {
+  const nodes = getSelectedNodes();
+  if (!nodes.length) {
+    return;
+  }
+  const anchor = nodes.reduce(
+    (acc, node) => ({
+      x: Math.min(acc.x, node.position.x),
+      y: Math.min(acc.y, node.position.y)
+    }),
+    { x: Number.POSITIVE_INFINITY, y: Number.POSITIVE_INFINITY }
+  );
+  const payloadNodes = nodes.map(node => ({
+    sourceId: node.id,
+    typeId: node.typeId,
+    label: node.label,
+    variableName: node.variableName,
+    inputs: clonePlainObject(node.inputs),
+    options: clonePlainObject(node.options),
+    constructorArgs: clonePlainObject(node.constructorArgs),
+    customValues: clonePlainObject(node.customValues),
+    inlineExpanded: !!node.inlineExpanded,
+    position: {
+      x: node.position.x - anchor.x,
+      y: node.position.y - anchor.y
+    }
+  }));
+  const nodeIdSet = new Set(nodes.map(node => node.id));
+  const triggerConnections = state.connections
+    .filter(conn => nodeIdSet.has(conn.from) && nodeIdSet.has(conn.to))
+    .map(conn => ({ from: conn.from, to: conn.to }));
+  const dataConnections = state.dataConnections
+    .filter(conn => nodeIdSet.has(conn.from) && nodeIdSet.has(conn.to))
+    .map(conn => ({
+      from: conn.from,
+      fromPort: conn.fromPort,
+      to: conn.to,
+      toPort: conn.toPort
+    }));
+  clipboardData = {
+    nodes: payloadNodes,
+    connections: triggerConnections,
+    dataConnections,
+    anchor
+  };
+}
+
+function getPasteAnchorPoint() {
+  if (lastPointerWorld) {
+    return lastPointerWorld;
+  }
+  const rect = getVisibleWorldRect();
+  if (rect) {
+    return {
+      x: rect.x + rect.width / 2,
+      y: rect.y + rect.height / 2
+    };
+  }
+  return { x: 0, y: 0 };
+}
+
+function pasteClipboardNodes() {
+  if (!clipboardData?.nodes?.length) {
+    return;
+  }
+  const anchor = clipboardData.anchor || { x: 0, y: 0 };
+  const pastePoint = getPasteAnchorPoint();
+  const offset = {
+    x: pastePoint.x - anchor.x,
+    y: pastePoint.y - anchor.y
+  };
+  const idMap = new Map();
+  const newIds = [];
+  clipboardData.nodes.forEach(nodeData => {
+    const def = getNodeDefinition(nodeData.typeId);
+    if (!def) {
+      return;
+    }
+    const nodeId = `node-${state.nextNodeId++}`;
+    idMap.set(nodeData.sourceId, nodeId);
+    state.typeCounters[nodeData.typeId] = (state.typeCounters[nodeData.typeId] ?? 0) + 1;
+    const label = makeDuplicateLabel(nodeData.label || def.label);
+    const variableName = makeUniqueIdentifier(nodeData.variableName || def.varPrefix || def.typeId.toLowerCase());
+    const inputs = clonePlainObject(nodeData.inputs);
+    const options = clonePlainObject(nodeData.options);
+    const constructorArgs = clonePlainObject(nodeData.constructorArgs);
+    const customValues = clonePlainObject(nodeData.customValues);
+    ensureInputDefaults(inputs, def.inputs);
+    ensureOptionDefaults(options, def.options);
+    ensureConstructorDefaults(constructorArgs, def.constructorArgs);
+    ensureCustomValueDefaults(customValues, def.customSetters);
+    const position = {
+      x: (nodeData.position?.x ?? 0) + offset.x,
+      y: (nodeData.position?.y ?? 0) + offset.y
+    };
+    state.nodes.push({
+      id: nodeId,
+      typeId: nodeData.typeId,
+      label,
+      variableName,
+      position,
+      inputs,
+      options,
+      constructorArgs,
+      customValues,
+      inlineExpanded: !!nodeData.inlineExpanded,
+      createdAt: Date.now()
+    });
+    newIds.push(nodeId);
+  });
+  clipboardData.connections?.forEach(conn => {
+    const fromId = idMap.get(conn.from);
+    const toId = idMap.get(conn.to);
+    if (fromId && toId && !isRootNodeId(toId)) {
+      state.connections.push({ id: createId(), from: fromId, to: toId });
+    }
+  });
+  clipboardData.dataConnections?.forEach(conn => {
+    const fromId = idMap.get(conn.from);
+    const toId = idMap.get(conn.to);
+    if (fromId && toId && conn.fromPort && conn.toPort && !isRootNodeId(fromId) && !isRootNodeId(toId)) {
+      state.dataConnections.push({
+        id: createId(),
+        from: fromId,
+        fromPort: conn.fromPort,
+        to: toId,
+        toPort: conn.toPort
+      });
+    }
+  });
+  if (newIds.length) {
+    setSelectedNodes(newIds, newIds[newIds.length - 1], { silent: true });
+    bringNodeToFront(newIds[newIds.length - 1]);
+    renderAll();
+    markStateDirty();
+  }
+}
+
+function updatePointerWorldFromEvent(event) {
+  lastPointerWorld = clientToWorld(event.clientX, event.clientY);
+}
+
+function isEditableTarget(target) {
+  if (!target) {
+    return false;
+  }
+  const tag = target.tagName ? target.tagName.toLowerCase() : "";
+  if (target.isContentEditable) {
+    return true;
+  }
+  if (tag === "input") {
+    const type = (target.getAttribute("type") || "text").toLowerCase();
+    const textInputTypes = new Set(["text", "number", "search", "password", "email", "url"]);
+    return textInputTypes.has(type);
+  }
+  return tag === "textarea" || tag === "select";
 }
 
 function openCodeModal(code) {
@@ -2150,6 +2473,7 @@ function cloneRecord(record) {
 }
 
 function buildGraphSnapshot() {
+  const rootNode = getRootNode();
   const nodes = state.nodes
     .filter(node => !isRootNode(node))
     .map(node => ({
@@ -2180,7 +2504,15 @@ function buildGraphSnapshot() {
       offsetX: state.viewport?.offsetX ?? 0,
       offsetY: state.viewport?.offsetY ?? 0,
       scale: state.viewport?.scale ?? 1
-    }
+    },
+    root: rootNode
+      ? {
+          position: {
+            x: rootNode.position?.x ?? 0,
+            y: rootNode.position?.y ?? 0
+          }
+        }
+      : null
   };
 }
 
@@ -2328,7 +2660,17 @@ function applyGraphSnapshot(snapshot, options = {}) {
   persistencePaused = true;
   try {
     const normalizedNodes = normalizeSnapshotNodes(Array.isArray(snapshot.nodes) ? snapshot.nodes : []);
-    state.nodes = [createRootNode(), ...normalizedNodes];
+    const root = createRootNode();
+    if (snapshot.root?.position) {
+      const pos = snapshot.root.position;
+      if (Number.isFinite(pos.x)) {
+        root.position.x = pos.x;
+      }
+      if (Number.isFinite(pos.y)) {
+        root.position.y = pos.y;
+      }
+    }
+    state.nodes = [root, ...normalizedNodes];
     const nodeIds = new Set(state.nodes.map(node => node.id));
     state.connections = filterConnections(snapshot.connections, nodeIds);
     state.dataConnections = filterDataConnections(snapshot.dataConnections, nodeIds);
@@ -2490,6 +2832,7 @@ function init() {
   canvasEl.addEventListener("click", onCanvasClick);
   canvasEl.addEventListener("pointerdown", onCanvasPointerDown);
   canvasEl.addEventListener("wheel", onCanvasWheel, { passive: false });
+  canvasEl.addEventListener("pointermove", updatePointerWorldFromEvent);
   window.addEventListener("resize", scheduleConnectionUpdate);
   if (paletteSearchInput) {
     paletteSearchInput.value = state.paletteSearch;
@@ -2585,19 +2928,49 @@ function init() {
     });
   }
   document.addEventListener("keydown", event => {
-    if (event.key !== "Escape") {
+    const key = typeof event.key === "string" ? event.key.toLowerCase() : "";
+    const isMetaKey = event.metaKey || event.ctrlKey;
+    if (key === "escape") {
+      if (transformModalEl && !transformModalEl.classList.contains("hidden")) {
+        event.preventDefault();
+        closeTransformModal();
+        return;
+      }
+      if (codeModalEl && !codeModalEl.classList.contains("hidden")) {
+        closeCodeModal({ focusTrigger: true });
+        return;
+      }
+    }
+    if (isEditableTarget(event.target)) {
       return;
     }
-    if (transformModalEl && !transformModalEl.classList.contains("hidden")) {
+    if (key === "delete" || key === "backspace") {
+      const hadSelection = state.selectedNodeIds.length > 0;
+      if (hadSelection) {
+        event.preventDefault();
+        deleteSelectedNodes();
+      }
+      return;
+    }
+    if (isMetaKey && key === "c") {
       event.preventDefault();
-      closeTransformModal();
+      copySelectionToClipboard();
       return;
     }
-    if (codeModalEl && !codeModalEl.classList.contains("hidden")) {
-      closeCodeModal({ focusTrigger: true });
+    if (isMetaKey && key === "v") {
+      event.preventDefault();
+      pasteClipboardNodes();
+      return;
     }
   });
   renderAll();
+  const initialRect = getVisibleWorldRect();
+  if (initialRect) {
+    lastPointerWorld = {
+      x: initialRect.x + initialRect.width / 2,
+      y: initialRect.y + initialRect.height / 2
+    };
+  }
 }
 
 document.addEventListener("DOMContentLoaded", init);
@@ -2621,6 +2994,7 @@ function onCanvasPointerDown(event) {
   if (event.button !== 0) {
     return;
   }
+  updatePointerWorldFromEvent(event);
   if (event.target.closest(".node-card") || event.target.closest(".port-row") || event.target.closest(".port-label") || event.target.closest(".port-knob")) {
     return;
   }
@@ -3358,7 +3732,12 @@ function appendNodeEditorContent(node, context, target) {
           refreshInspectorIfNecessary(node.id, context);
           markStateDirty();
         },
-        { placeholder: arg.placeholder, compact: isInline }
+        {
+          placeholder: arg.placeholder,
+          helperText: arg.helperText,
+          compact: isInline,
+          typeHint: normalizeDataType(arg.dataType)
+        }
       );
       ctorSection.appendChild(row);
     });
@@ -4194,6 +4573,23 @@ function deleteNode(nodeId) {
   renderAll();
 }
 
+function deleteSelectedNodes() {
+  const toDelete = [...state.selectedNodeIds];
+  if (!toDelete.length) {
+    return;
+  }
+  toDelete.forEach(nodeId => {
+    if (!isRootNodeId(nodeId)) {
+      state.nodes = state.nodes.filter(node => node.id !== nodeId);
+      state.connections = state.connections.filter(conn => conn.from !== nodeId && conn.to !== nodeId);
+      state.dataConnections = state.dataConnections.filter(conn => conn.from !== nodeId && conn.to !== nodeId);
+    }
+  });
+  clearSelection({ silent: true });
+  markStateDirty();
+  renderAll();
+}
+
 function pruneConnections(predicate) {
   const before = state.connections.length;
   state.connections = state.connections.filter(conn => !predicate(conn));
@@ -4702,6 +5098,20 @@ function makeUniqueIdentifier(base) {
   return attempt;
 }
 
+function makeDuplicateLabel(baseLabel) {
+  const existing = new Set(state.nodes.map(n => n.label));
+  const cleanedBase = baseLabel || "Node";
+  let candidate = `${cleanedBase} Copy`;
+  if (!existing.has(candidate)) {
+    return candidate;
+  }
+  let counter = 2;
+  while (existing.has(`${cleanedBase} Copy ${counter}`)) {
+    counter += 1;
+  }
+  return `${cleanedBase} Copy ${counter}`;
+}
+
 function clamp(value, min, max) {
   return Math.min(Math.max(value, min), max);
 }
@@ -4838,7 +5248,6 @@ function applySelectionFromMarquee(options = {}) {
     return;
   }
   const selectedIds = state.nodes
-    .filter(node => !isRootNode(node))
     .filter(node => rectsOverlap(rect, getNodeWorldBounds(node)))
     .map(node => node.id);
   setSelectedNodes(selectedIds, selectedIds[selectedIds.length - 1] || null);
@@ -5031,16 +5440,18 @@ function generateCpp() {
     sortedIncludes.forEach(inc => lines.push(`#include "${inc}"`));
     lines.push("");
   }
-  if (hasParticleNodes) {
-    lines.push("namespace wp = weave::particles;");
-  }
-  lines.push("namespace wb = weave::blender;");
   lines.push("");
   const builderName = buildGraphBuilderFunctionName(getGraphName());
-  lines.push(`void ${builderName}(wb::Blender& graph) {`);
+  lines.push(`void ${builderName}(weave::blender::Blender& graph) {`);
+  if (hasParticleNodes) {
+    lines.push("    namespace wp = weave::particles;");
+  }
+  lines.push("    namespace wb = weave::blender;");
+  lines.push("    using namespace weave;");
+  lines.push("");
   bodyLines.forEach(line => {
     if (line) {
-      lines.push(`  ${line}`);
+      lines.push(`    ${line}`);
     } else {
       lines.push("");
     }

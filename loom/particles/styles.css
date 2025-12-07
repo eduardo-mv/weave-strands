@@ -20,6 +20,7 @@
     --type-uint: #f97316;
     --type-int: #f8b4b4;
     --type-bool: #ff8ad9;
+    --type-quat: #ff9af5;
     --type-generic: #9da7c4;
     font-family: "Inter", "Segoe UI", sans-serif;
 }
@@ -653,6 +654,14 @@ label {
 
 .port-knob[data-data-type="bool"] {
     border-color: var(--type-bool);
+}
+
+.port-row[data-data-type="quat"] .port-label {
+    color: var(--type-quat);
+}
+
+.port-knob[data-data-type="quat"] {
+    border-color: var(--type-quat);
 }
 
 .port-row.trigger-row .port-label {
