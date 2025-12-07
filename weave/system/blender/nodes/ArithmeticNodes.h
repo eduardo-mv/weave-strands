@@ -7,10 +7,20 @@
 #include "weave/system/blender/Blender.h"
 #include "weave/system/math/Easing.h"
 #include "weave/system/math/Interpolation.h"
+#include <algorithm>
 #include <cstddef>
 #include <tuple>
+#include <type_traits>
+#include <utility>
 
 namespace weave::blender {
+
+namespace detail {
+
+template<typename T, typename... Ts>
+struct AllSame : std::conjunction<std::is_same<std::decay_t<T>, std::decay_t<Ts>>...> {};
+
+} // namespace detail
 
 template<typename... Types>
 class ConstNode : public BlenderNode<
@@ -23,6 +33,45 @@ public:
     }
 
     void ExecuteNode() override { }
+};
+
+template<typename Type, typename... AdditionalTypes>
+class InputSelector : public BlenderNode<
+	In<Type, AdditionalTypes..., size_t>,
+	Out<Type>> {
+	static_assert(detail::AllSame<Type, AdditionalTypes...>::value, "InputSelector inputs must share the same type");
+
+	static constexpr size_t kValueInputCount = sizeof...(AdditionalTypes) + 1;
+	static constexpr size_t kSelectorIndex = kValueInputCount;
+
+public:
+	enum OutputIndex : size_t {
+		ResultOutput
+	};
+
+	enum InputIndex : size_t {
+		SelectorInput = kSelectorIndex
+	};
+
+	InputSelector() = default;
+
+	InputSelector(Type firstValue, AdditionalTypes... remainingValues, size_t selector = 0) {
+		this->input.SetDefaultValues(firstValue, remainingValues..., selector);
+	}
+
+	void ExecuteNode() override {
+		const size_t requested = this->input.template Ref<SelectorInput>();
+		const Type value = SelectValue(requested, std::make_index_sequence<kValueInputCount>{});
+		this->output.template Ref<ResultOutput>() = value;
+	}
+
+private:
+	template<size_t... I>
+	Type SelectValue(size_t requested, std::index_sequence<I...>) const {
+		const Type* sources[] = { &this->input.template Ref<I>()... };
+		const size_t clamped = std::min(requested, kValueInputCount - 1);
+		return *sources[clamped];
+	}
 };
 
 template<typename Type>

@@ -1,0 +1,43 @@
+#pragma once
+
+#include "weave/system/blender/Blender.h"
+
+namespace weave::blender {
+
+// Passive node used to merge or split trigger flows.
+class TriggerFunnel : public BlenderNode<> {
+public:
+	void ExecuteNode() override {}
+};
+
+// Propagates triggers only when the boolean input evaluates to true.
+class TriggerConditional : public BlenderNode<
+	In<bool>> {
+public:
+	enum InputIndex : size_t {
+		ConditionInput
+	};
+
+	void ExecuteNode() override {}
+
+	bool TriggerFired(size_t) override {
+		return this->input.template Ref<ConditionInput>();
+	}
+};
+
+// Allows trigger propagation only for the selected trigger index.
+class TriggerSelector : public BlenderNode<
+	In<size_t>> {
+public:
+	enum InputIndex : size_t {
+		SelectedIndex
+	};
+
+	void ExecuteNode() override {}
+
+	bool TriggerFired(size_t incomingIndex) override {
+		return incomingIndex == this->input.template Ref<SelectedIndex>();
+	}
+};
+
+} // namespace weave::blender
