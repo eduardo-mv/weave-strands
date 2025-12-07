@@ -26,9 +26,9 @@ ParticleBoxInit::ParticleBoxInit() {
 		0.0f, // min X
 		0.0f, // min Y
 		0.0f, // min Z
-		1.0f, // max X
-		1.0f, // max Y
-		1.0f  // max Z
+		0.5f, // max X
+		0.5f, // max Y
+		0.5f  // max Z
 	);
 }
 

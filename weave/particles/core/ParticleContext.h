@@ -60,8 +60,10 @@ private:
 		}
 
 		void PushEmission(uint64_t amount) {
-			if(buffer && amount > 0) {
-				buffer->AddEmissionParticles(amount);
+			if(buffer) {
+				if(amount > 0) {
+					buffer->AddEmissionParticles(amount);
+				}
 				emissionStack.emplace_back(amount);
 				totalEmitted += amount;
 			}

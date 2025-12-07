@@ -18,7 +18,7 @@ ParticleEmitter::ParticleEmitter() {
 		0.0f,                               // min period (seconds)
 		0.0f,                               // max period (seconds)
 		std::numeric_limits<double>::max(), // max runtime
-		std::numeric_limits<uint64_t>::max(), // max particles
+		std::numeric_limits<uint64_t>::max(), // max particles (unlimited)
 		0u                                  // reset signal
 	);
 }
@@ -47,9 +47,14 @@ float ParticleEmitter::RandomFrequency(float minFreq, float maxFreq) const {
 }
 
 void ParticleEmitter::ExecuteNode() {
+	auto amount = GenerateParticles();
+	GetContext().AddEmissionParticles(amount);
+}
+
+uint64_t ParticleEmitter::GenerateParticles() {
 	auto& context = GetContext();
 	if (context.BufferCount() == 0) {
-		return;
+		return 0;
 	}
 
 	auto& minEmitInput = this->input.template Ref<MinEmit>();
@@ -71,7 +76,7 @@ void ParticleEmitter::ExecuteNode() {
 	}
 
 	if (maxParticles == 0u) {
-		return;
+		return 0;
 	}
 
 	if (nextFreq <= 0.0f && (minFreq > 0.0f || maxFreq > 0.0f)) {
@@ -84,7 +89,7 @@ void ParticleEmitter::ExecuteNode() {
 	runTime = std::min(runTime + static_cast<double>(deltaTime), maxRuntime);
 
 	if (emittedTotal >= maxParticles || runTime >= maxRuntime) {
-		return;
+		return 0;
 	}
 
 	bool shouldEmit = false;
@@ -102,7 +107,7 @@ void ParticleEmitter::ExecuteNode() {
 	}
 
 	if (!shouldEmit) {
-		return;
+		return 0;
 	}
 
 	const float emitMin = std::min(minEmitInput, maxEmitInput);
@@ -125,7 +130,7 @@ void ParticleEmitter::ExecuteNode() {
 
 	uint64_t particlesToEmit = integralPart;
 	if (particlesToEmit == 0) {
-		return;
+		return 0;
 	}
 
 	const uint64_t remaining = maxParticles - emittedTotal;
@@ -134,12 +139,13 @@ void ParticleEmitter::ExecuteNode() {
 	}
 
 	if (particlesToEmit == 0) {
-		return;
+		return 0;
 	}
 
 	emittedTotal += particlesToEmit;
 
-	context.AddEmissionParticles(particlesToEmit);
+	return particlesToEmit;
+
 }
 
 } // namespace weave::particles

@@ -37,6 +37,8 @@ private:
     uint32_t lastResetValue = 0;
 
     float RandomFrequency(float minFreq, float maxFreq) const;
+
+	uint64_t GenerateParticles();
 };
 
 }
