@@ -225,6 +225,23 @@ private:
 		}
 	}
 
+	template<size_t N = 0, typename Tuple>
+	bool IsConnectedTuple(Tuple const& tup, size_t inputNum) const {
+		if (inputNum >= std::tuple_size_v<std::decay_t<Tuple>>) {
+			return false;
+		}
+
+		if constexpr (N >= std::tuple_size_v<std::decay_t<Tuple>>) {
+			return false;
+		}
+		else if (inputNum == 0) {
+			return std::get<N>(tup).IsConnected();
+		}
+		else {
+			return IsConnectedTuple<N + 1>(tup, inputNum - 1);
+		}
+	}
+
 private:
 	struct EmptyType {
 		EmptyType() {}
@@ -293,6 +310,26 @@ public:
 	template<typename ...ValueTypes>
 	void SetDefaultValues(ValueTypes&&... values) {
 		SetDefaultValueTuple<0>(std::make_tuple(std::forward<ValueTypes>(values)...));
+	}
+
+	template<size_t n>
+	bool IsConnected() const {
+		static_assert(n < GetInputCount());
+		return std::get<n>(inputTuple).IsConnected();
+	}
+
+	template<typename T>
+	bool IsConnected() const {
+		return std::get<Input<T>>(inputTuple).IsConnected();
+	}
+
+	bool IsConnected(size_t inputNum) const {
+		if constexpr (sizeof...(Types) == 0) {
+			return false;
+		}
+		else {
+			return IsConnectedTuple(inputTuple, inputNum);
+		}
 	}
 
 	template<size_t N = 0>

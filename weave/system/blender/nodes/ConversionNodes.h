@@ -6,6 +6,7 @@
 #include <utility>
 
 #include "weave/system/blender/Blender.h"
+#include "weave/system/math/Transform.h"
 #include "weave/system/math/VectorMath.h"
 
 namespace weave::blender {
@@ -270,6 +271,86 @@ public:
         this->output.template Ref<YOutput>() = value.y;
         this->output.template Ref<ZOutput>() = value.z;
         this->output.template Ref<WOutput>() = value.w;
+    }
+};
+
+class ComposeTransformNode : public BlenderNode<
+    In<Vector3, Quaternion, Vector3, Vector3>,
+    Out<Transform>> {
+public:
+    enum InputIndex : size_t {
+        PositionInput, // World-space translation value
+        QuaternionInput, // Preferred quaternion rotation input
+        EulerInput, // Optional Euler rotation fallback (radians)
+        ScaleInput // Non-uniform scaling factors
+    };
+
+    enum OutputIndex : size_t {
+        ResultOutput // Composed transform
+    };
+
+    ComposeTransformNode() {
+        this->input.SetDefaultValues(
+            Vector3{ 0.0f, 0.0f, 0.0f },
+            Quaternion(Vector3{ 0.0f, 0.0f, 0.0f }),
+            Vector3{ 0.0f, 0.0f, 0.0f },
+            Vector3{ 1.0f, 1.0f, 1.0f });
+    }
+
+    ComposeTransformNode(Vector3 position, Quaternion rotation, Vector3 eulerFallback, Vector3 scale) {
+        this->input.SetDefaultValues(position, rotation, eulerFallback, scale);
+    }
+
+    void ExecuteNode() override {
+        Transform transform;
+        transform.SetPosition(this->input.template Ref<PositionInput>());
+        transform.SetScaling(this->input.template Ref<ScaleInput>());
+
+        Quaternion orientation;
+        if (this->input.template IsConnected<QuaternionInput>()) {
+            orientation = this->input.template Ref<QuaternionInput>();
+        }
+        else {
+            orientation = Quaternion(this->input.template Ref<EulerInput>());
+        }
+        transform.SetOrientation(orientation);
+
+        this->output.template Ref<ResultOutput>() = transform;
+    }
+};
+
+class DecomposeTransformNode : public BlenderNode<
+    In<Transform>,
+    Out<Vector3, Quaternion, Vector3, Vector3>> {
+public:
+    enum InputIndex : size_t {
+        TransformInput // Transform to decompose
+    };
+
+    enum OutputIndex : size_t {
+        PositionOutput, // Extracted translation
+        QuaternionOutput, // Extracted quaternion rotation
+        EulerOutput, // Rotation expressed as Euler angles (radians)
+        ScaleOutput // Extracted scale
+    };
+
+    DecomposeTransformNode() = default;
+
+    explicit DecomposeTransformNode(Transform transform) {
+        this->input.SetDefaultValues(transform);
+    }
+
+    void ExecuteNode() override {
+        Transform const& transform = this->input.template Ref<TransformInput>();
+        const Vector3 position = transform.GetPosition();
+        const Quaternion orientation = transform.GetOrientation();
+        const Vector3 euler = orientation.ToEuler();
+        const Vector3 scale = transform.GetScaling();
+
+        this->output.template Ref<PositionOutput>() = position;
+        this->output.template Ref<QuaternionOutput>() = orientation;
+        this->output.template Ref<EulerOutput>() = euler;
+        this->output.template Ref<ScaleOutput>() = scale;
     }
 };
 
