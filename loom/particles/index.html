@@ -14,24 +14,39 @@
     </div>
     <div class="header-actions">
         <button id="generateCodeBtn">Generate C++</button>
+        <button id="saveProjectBtn" class="secondary">Save Project</button>
+        <button id="loadProjectBtn" class="secondary">Load Project</button>
         <button id="resetGraphBtn" class="secondary">Reset Graph</button>
+        <input type="file" id="projectFileInput" accept=".json,.loom" hidden>
     </div>
 </header>
 <main class="app-layout">
     <section class="panel palette" aria-label="Node Palette">
         <h2>Nodes</h2>
+        <div class="palette-search">
+            <input type="text" id="paletteSearch" placeholder="Search nodes..." aria-label="Search nodes" autocomplete="off">
+        </div>
         <div id="paletteList" class="palette-list"></div>
     </section>
     <section class="panel canvas-panel" aria-label="Graph Canvas">
         <div class="canvas-toolbar">
-            <div>
-                <strong>Canvas</strong>
+            <div class="canvas-toolbar-info">
+                <label class="graph-name-label" for="graphNameInput">
+                    <span>Project</span>
+                    <input type="text" id="graphNameInput" aria-label="Graph name" maxlength="60" autocomplete="off" spellcheck="false" />
+                </label>
                 <span id="canvasHint">Drag nodes to reposition. Use the inspector to connect them.</span>
+            </div>
+            <div class="canvas-toolbar-actions">
+                <button type="button" id="zoomToFitBtn" class="secondary">Zoom to Fit</button>
+                <button type="button" id="focusSelectedBtn" class="secondary" disabled>Focus Selection</button>
             </div>
         </div>
         <div id="graphCanvas" class="graph-canvas">
-            <svg id="connectionLayer" class="connection-layer" aria-hidden="true"></svg>
-            <div id="nodesLayer" class="nodes-layer"></div>
+            <div id="graphViewport" class="graph-viewport">
+                <svg id="connectionLayer" class="connection-layer" aria-hidden="true"></svg>
+                <div id="nodesLayer" class="nodes-layer"></div>
+            </div>
         </div>
     </section>
     <section class="panel inspector" aria-label="Inspector">
@@ -41,13 +56,53 @@
         </div>
     </section>
 </main>
-<section class="panel code-panel" aria-label="Generated Code">
-    <div class="code-panel-header">
-        <h2>C++ Output</h2>
-        <span>Copy &amp; paste into your Blender or ParticleMachine setup</span>
+<div id="codeModal" class="code-modal hidden" aria-hidden="true">
+    <div class="code-modal-content" role="dialog" aria-modal="true" aria-labelledby="codeModalTitle">
+        <header class="code-modal-header">
+            <div>
+                <h2 id="codeModalTitle">Generated C++</h2>
+                <p class="muted small">Copy &amp; paste into your Blender setup</p>
+            </div>
+            <div class="code-modal-header-actions">
+                <button type="button" id="copyCodeBtn">Copy</button>
+                <button type="button" id="closeCodeModalBtn" class="secondary">Close</button>
+            </div>
+        </header>
+        <textarea id="codeModalOutput" class="code-modal-output" readonly spellcheck="false"></textarea>
     </div>
-    <textarea id="codeOutput" rows="12" readonly spellcheck="false"></textarea>
-</section>
+</div>
+<div id="transformModal" class="transform-modal hidden" aria-hidden="true">
+    <div class="transform-modal-content" role="dialog" aria-modal="true" aria-labelledby="transformModalTitle">
+        <header class="transform-modal-header">
+            <div>
+                <h2 id="transformModalTitle">Edit Transform</h2>
+                <p class="muted small">Set translation, rotation (radians) and scale</p>
+            </div>
+            <button type="button" id="closeTransformModalBtn" class="secondary">Close</button>
+        </header>
+        <div id="transformModalWarning" class="transform-modal-warning hidden"></div>
+        <div class="transform-modal-body">
+            <section class="transform-field">
+                <h3>Translation</h3>
+                <div id="transformTranslationEditor" class="transform-vector"></div>
+            </section>
+            <section class="transform-field">
+                <h3>Rotation <span class="muted small">(pitch, yaw, roll in radians)</span></h3>
+                <div id="transformRotationEditor" class="transform-vector"></div>
+            </section>
+            <section class="transform-field">
+                <h3>Scale</h3>
+                <div id="transformScaleEditor" class="transform-vector"></div>
+            </section>
+        </div>
+        <footer class="transform-modal-footer">
+            <button type="button" id="resetTransformModalBtn" class="secondary">Reset</button>
+            <div class="spacer"></div>
+            <button type="button" id="cancelTransformModalBtn" class="secondary">Cancel</button>
+            <button type="button" id="applyTransformModalBtn">Apply</button>
+        </footer>
+    </div>
+</div>
 <script src="app.js"></script>
 </body>
 </html>
