@@ -4,10 +4,17 @@
 
 namespace weave::blender {
 
-// Passive node used to merge or split trigger flows.
-class TriggerFunnel : public BlenderNode<> {
+// Passive node used to merge or split trigger flows, also exposes trigger count.
+class TriggerFunnel : public BlenderNode<
+	Out<size_t>> {
 public:
-	void ExecuteNode() override {}
+	enum OutputIndex : size_t {
+		TriggerCountOutput
+	};
+
+	void ExecuteNode() override {
+		this->output.template Ref<TriggerCountOutput>() = static_cast<size_t>(this->triggerCountTarget);
+	}
 };
 
 // Propagates triggers only when the boolean input evaluates to true.
