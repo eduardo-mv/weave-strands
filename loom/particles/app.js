@@ -7,6 +7,7 @@ const TRANSFORM_HEADER = "weave/system/math/Transform.h";
 const RNG_HEADER = "weave/system/blender/nodes/RngNodes.h";
 const NOISE_HEADER = "weave/system/blender/nodes/NoiseNodes.h";
 const SIGNAL_SAMPLER_HEADER = "weave/animation/blender/samplers/SignalSampler.h";
+const TRIGGER_FLOW_HEADER = "weave/system/blender/nodes/TriggerFlowNodes.h";
 
 const TYPE_VARIANTS = [
   { id: "float", suffix: "Float", varSuffix: "Float", label: "Float", typeGroup: "Float", typeName: "float", zero: "0.0f", one: "1.0f" },
@@ -16,6 +17,132 @@ const TYPE_VARIANTS = [
 ];
 
 const TYPE_VARIANT_MAP = Object.fromEntries(TYPE_VARIANTS.map(variant => [variant.id, variant]));
+const TYPE_SUFFIX_MAP = Object.fromEntries(TYPE_VARIANTS.map(variant => [variant.suffix, variant.id]));
+
+[
+  { id: "bool", suffix: "Bool", varSuffix: "Bool", label: "Bool", typeGroup: "Bool", typeName: "bool", zero: "false", one: "true" },
+  { id: "int", suffix: "Int", varSuffix: "Int", label: "Int", typeGroup: "Scalar", typeName: "int32_t", zero: "0", one: "1" },
+  { id: "uint", suffix: "UInt", varSuffix: "UInt", label: "UInt", typeGroup: "Scalar", typeName: "uint32_t", zero: "0u", one: "1u" }
+].forEach(variant => {
+  if (!TYPE_VARIANT_MAP[variant.id]) {
+    TYPE_VARIANT_MAP[variant.id] = variant;
+  }
+});
+
+function normalizeInputDefinition(input) {
+  if (!input) {
+    return null;
+  }
+  return {
+    ...input,
+    accessorType: input.accessorType || "enum",
+    dataType: input.dataType || null
+  };
+}
+
+function normalizeOutputDefinition(output) {
+  if (!output) {
+    return null;
+  }
+  return {
+    ...output,
+    accessorType: output.accessorType || "index",
+    dataType: output.dataType || null
+  };
+}
+
+function resolveCppType(def, node) {
+  if (!def) {
+    return "";
+  }
+  if (typeof def.cppTypeResolver === "function") {
+    return def.cppTypeResolver(node, def) || "";
+  }
+  if (typeof def.cppType === "function") {
+    return def.cppType(node, def) || "";
+  }
+  return def.cppType || "";
+}
+
+function resolveNodeInputs(def, node) {
+  if (!def) {
+    return [];
+  }
+  const rawInputs = typeof def.buildInputs === "function" ? def.buildInputs(node, def) || [] : def.inputs || [];
+  return rawInputs.map(normalizeInputDefinition).filter(Boolean);
+}
+
+function resolveNodeOutputs(def, node) {
+  if (!def) {
+    return [];
+  }
+  const rawOutputs = typeof def.buildOutputs === "function" ? def.buildOutputs(node, def) || [] : def.outputs || [];
+  return rawOutputs.map(normalizeOutputDefinition).filter(Boolean);
+}
+
+function resolveNodeConstructorArgs(def, node) {
+  if (!def) {
+    return [];
+  }
+  const rawArgs = typeof def.buildConstructorArgs === "function" ? def.buildConstructorArgs(node, def) || [] : def.constructorArgs || [];
+  return rawArgs.map(arg => ({ ...arg }));
+}
+
+const GENERAL_VALUE_TYPE_OPTIONS = [
+  { value: "float", label: "Float" },
+  { value: "vec2", label: "Vector2" },
+  { value: "vec3", label: "Vector3" },
+  { value: "vec4", label: "Vector4" },
+  { value: "bool", label: "Bool" },
+  { value: "int", label: "Int" },
+  { value: "uint", label: "UInt" }
+];
+
+function createValueTypeConfig(allowedTypes = ["float"], defaultType = "float", key = "valueType") {
+  const normalizedAllowed = (allowedTypes || []).map(type => normalizeDataType(type)).filter(Boolean);
+  if (!normalizedAllowed.length) {
+    normalizedAllowed.push("float");
+  }
+  const normalizedDefault = normalizeDataType(defaultType);
+  const fallback = normalizedAllowed.includes(normalizedDefault) ? normalizedDefault : normalizedAllowed[0];
+  const options = GENERAL_VALUE_TYPE_OPTIONS.filter(opt => normalizedAllowed.includes(opt.value));
+  if (!key) {
+    return {
+      key: null,
+      allowed: normalizedAllowed,
+      defaultType: fallback,
+      options,
+      get: () => {
+        const variant = getVariantForType(fallback);
+        return { typeId: fallback, variant };
+      }
+    };
+  }
+  return {
+    key,
+    allowed: normalizedAllowed,
+    defaultType: fallback,
+    options,
+    get: (node, opts = {}) => {
+      const target = node || {};
+      target.customValues = target.customValues || {};
+      let typeId = normalizeDataType(target.customValues[key]);
+      if (!normalizedAllowed.includes(typeId)) {
+        typeId = fallback;
+      }
+      if (opts.normalize && node) {
+        node.customValues[key] = typeId;
+      }
+      const variant = getVariantForType(typeId);
+      return { typeId, variant };
+    }
+  };
+}
+
+function getVariantForType(typeId, fallback = "float") {
+  const normalized = normalizeDataType(typeId) || fallback;
+  return TYPE_VARIANT_MAP[normalized] || TYPE_VARIANT_MAP[fallback];
+}
 const TRIGGER_PORT_KEY = "__trigger__";
 const DEFAULT_NODE_WIDTH = 240;
 const DEFAULT_NODE_HEIGHT = 260;
@@ -117,6 +244,28 @@ const PARTICLE_NODES = [
       { key: "MaxRuntime", label: "Max Runtime (seconds)", cppAccessor: "MaxRuntime", defaultValue: "-1.0", dataType: "float" },
       { key: "MaxParticles", label: "Max Particles", cppAccessor: "MaxParticles", defaultValue: "size_t(-1)", dataType: "uint", hint: "Set to size_t(-1) for unlimited" },
       { key: "ResetSignal", label: "Reset Signal", cppAccessor: "ResetSignal", defaultValue: "0u" }
+    ]
+  },
+  {
+    typeId: "AutoParticleBufferSelector",
+    label: "Auto Buffer Selector",
+    description: "Automatically sets the current particle buffer based on the trigger index.",
+    cppType: "wp::AutoParticleBufferSelector",
+    typeGroup: "Buffer Selectors",
+    include: "weave/particles/core/nodes/AutoParticleBufferSelector.h",
+    varPrefix: "autoBufferSelector",
+    inputs: []
+  },
+  {
+    typeId: "ParticleBufferSelector",
+    label: "Buffer Selector",
+    description: "Selects a specific particle buffer for downstream nodes.",
+    cppType: "wp::ParticleBufferSelector",
+    typeGroup: "Buffer Selectors",
+    include: "weave/particles/core/nodes/ParticleBufferSelector.h",
+    varPrefix: "bufferSelector",
+    inputs: [
+      { key: "TargetBufferIndex", label: "Target Buffer Index", cppAccessor: "TargetBufferIndex", defaultValue: "0u", dataType: "uint", hint: "Buffer slot to operate on" }
     ]
   },
   {
@@ -380,6 +529,15 @@ const PORT_HINTS = {
       ResetSignal: "Optional external reset trigger value"
     }
   },
+  AutoParticleBufferSelector: {
+    inputs: {},
+    outputs: {}
+  },
+  ParticleBufferSelector: {
+    inputs: {
+      TargetBufferIndex: "Buffer slot index to make active (clamped to valid range)"
+    }
+  },
   ParticleBoxInit: {
     inputs: {
       MinX: "Minimum X extent of the spawn box",
@@ -510,6 +668,44 @@ const PORT_HINTS = {
       FieldListInput: "List of turbulence fields to apply",
       RadiusInput: "Optional influence radius",
       DecayInput: "Falloff applied as particles leave the radius"
+    }
+  },
+  TriggerFunnel: {
+    outputs: {
+      TriggerCount: "Number of upstream triggers wired into this node"
+    }
+  },
+  TriggerConditional: {
+    inputs: {
+      ConditionInput: "Forward triggers only when true"
+    }
+  },
+  TriggerSelector: {
+    inputs: {
+      SelectedIndex: "Trigger index that is allowed to propagate"
+    }
+  },
+  InputSelector: {
+    inputs: {
+      SelectorInput: "Zero-based index that chooses which value to forward"
+    },
+    outputs: {
+      Result: "Value taken from the selected input"
+    }
+  },
+  ConstValue: {
+    outputs: {
+      Value: "Constant value"
+    }
+  },
+  LerpValue: {
+    inputs: {
+      A: "Starting value",
+      B: "Ending value",
+      T: "Interpolation factor (0..1)"
+    },
+    outputs: {
+      Result: "Interpolated result"
     }
   },
   SignalSampler: {
@@ -650,301 +846,920 @@ function buildAnimationSamplerNodes() {
   ];
 }
 
-function buildConstNodes() {
-  return TYPE_VARIANTS.map(type => ({
-    typeId: `Const${type.suffix}`,
-    category: "Math",
-    typeGroup: type.typeGroup,
-    label: `Const (${type.label})`,
-    description: `Outputs a constant ${type.label.toLowerCase()} value.`,
-    cppType: `wb::ConstNode<${type.typeName}>`,
-    include: ARITHMETIC_HEADER,
-    varPrefix: `const${type.suffix}`,
-    constructorArgs: [
-      { key: "Value0", label: "Value", defaultValue: type.zero }
-    ],
-    outputs: [
-      { key: "Value", label: `${type.label} Value`, cppAccessor: "0", accessorType: "index", dataType: type.id }
-    ]
-  }));
-}
-
-const BINARY_MATH_CONFIGS = [
-  {
-    id: "Add",
-    label: "Add",
-    description: "Adds two values.",
-    varPrefix: "add",
-    resultLabel: "Sum",
-    defaults: type => ({ A: type.zero, B: type.zero }),
-    cppType: type => `wb::AddNode<${type.typeName}, ${type.typeName}>`
-  },
-  {
-    id: "Subtract",
-    label: "Subtract",
-    description: "Subtracts B from A.",
-    varPrefix: "sub",
-    resultLabel: "Difference",
-    defaults: type => ({ A: type.zero, B: type.zero }),
-    cppType: type => `wb::SubtractNode<${type.typeName}, ${type.typeName}>`
-  },
-  {
-    id: "Multiply",
-    label: "Multiply",
-    description: "Multiplies two values.",
-    varPrefix: "mul",
-    resultLabel: "Product",
-    defaults: type => ({ A: type.one, B: type.one }),
-    cppType: type => `wb::MultiplyNode<${type.typeName}, ${type.typeName}>`
-  },
-  {
-    id: "Divide",
-    label: "Divide",
-    description: "Divides A by B.",
-    varPrefix: "div",
-    resultLabel: "Quotient",
-    defaults: type => ({ A: type.one, B: type.one }),
-    cppType: type => `wb::DivideNode<${type.typeName}, ${type.typeName}>`
-  }
-];
-
-function buildBinaryMathNodes() {
-  const nodes = [];
-  BINARY_MATH_CONFIGS.forEach(config => {
-    TYPE_VARIANTS.forEach(type => {
-      const defaults = config.defaults(type);
-      nodes.push({
-        typeId: `${config.id}${type.suffix}`,
-        category: "Math",
-        typeGroup: type.typeGroup,
-        label: `${config.label} (${type.label})`,
-        description: config.description,
-        cppType: config.cppType(type),
-        include: ARITHMETIC_HEADER,
-        varPrefix: `${config.varPrefix}${type.suffix}`,
-        inputs: [
-          { key: "A", label: config.inputLabels?.A ?? "A", cppAccessor: "0", defaultValue: defaults.A, accessorType: "index", dataType: type.id },
-          { key: "B", label: config.inputLabels?.B ?? "B", cppAccessor: "1", defaultValue: defaults.B, accessorType: "index", dataType: type.id }
-        ],
-        outputs: [
-          { key: "Result", label: config.resultLabel, cppAccessor: "ResultOutput", accessorType: "enum", dataType: type.id }
-        ]
-      });
-    });
-  });
-  return nodes;
-}
-
-function buildScalarMathNodes() {
+function buildFlowControlNodes() {
   return [
     {
-      typeId: "ModuloFloat",
-      category: "Math",
-      typeGroup: "Float",
-      label: "Modulo (float)",
-      description: "Computes the remainder of A % B.",
-      cppType: "wb::ModuloNode<float, float>",
-      include: ARITHMETIC_HEADER,
-      varPrefix: "mod",
-      inputs: [
-        { key: "A", label: "A", cppAccessor: "0", defaultValue: "0.0f", accessorType: "index", dataType: "float" },
-        { key: "B", label: "B", cppAccessor: "1", defaultValue: "1.0f", accessorType: "index", dataType: "float" }
-      ],
+      typeId: "TriggerFunnel",
+      category: "Flow Control",
+      label: "Trigger Funnel",
+      description: "Merges or splits trigger connections without modifying data.",
+      cppType: "wb::TriggerFunnel",
+      include: TRIGGER_FLOW_HEADER,
+      varPrefix: "triggerFunnel",
+      inputs: [],
       outputs: [
-        { key: "Result", label: "Remainder", cppAccessor: "ResultOutput", accessorType: "enum", dataType: "float" }
+        { key: "TriggerCount", label: "Trigger Count", cppAccessor: "TriggerCountOutput", accessorType: "enum", dataType: "uint", hint: "Number of triggers wired into this funnel" }
       ]
     },
     {
-      typeId: "AbsFloat",
-      category: "Math",
-      typeGroup: "Float",
-      label: "Absolute (float)",
-      description: "Outputs the absolute value of the input.",
-      cppType: "wb::AbsoluteNode<float>",
-      include: ARITHMETIC_HEADER,
-      varPrefix: "abs",
+      typeId: "TriggerConditional",
+      category: "Flow Control",
+      label: "Trigger Conditional",
+      description: "Propagates triggers only when the condition input is true.",
+      cppType: "wb::TriggerConditional",
+      include: TRIGGER_FLOW_HEADER,
+      varPrefix: "triggerConditional",
       inputs: [
-        { key: "Value", label: "Value", cppAccessor: "ValueInput", defaultValue: "0.0f", accessorType: "enum", dataType: "float", hint: "Operand to abs()" }
-      ],
-      outputs: [
-        { key: "Result", label: "Absolute", cppAccessor: "ResultOutput", accessorType: "enum", dataType: "float" }
+        { key: "ConditionInput", label: "Condition", cppAccessor: "ConditionInput", accessorType: "enum", dataType: "bool", defaultValue: "true", hint: "Triggers pass only when this evaluates to true" }
       ]
     },
     {
-      typeId: "PowerFloat",
-      category: "Math",
-      typeGroup: "Float",
-      label: "Power (float)",
-      description: "Raises A to the B power.",
-      cppType: "wb::PowerNode<float, float>",
-      include: ARITHMETIC_HEADER,
-      varPrefix: "pow",
+      typeId: "TriggerSelector",
+      category: "Flow Control",
+      label: "Trigger Selector",
+      description: "Allows trigger propagation only for the specified incoming trigger index.",
+      cppType: "wb::TriggerSelector",
+      include: TRIGGER_FLOW_HEADER,
+      varPrefix: "triggerSelector",
       inputs: [
-        { key: "Base", label: "Base", cppAccessor: "BaseInput", defaultValue: "1.0f", accessorType: "enum", dataType: "float", hint: "Value being raised to a power" },
-        { key: "Exponent", label: "Exponent", cppAccessor: "ExponentInput", defaultValue: "2.0f", accessorType: "enum", dataType: "float", hint: "Exponent applied to the base" }
-      ],
-      outputs: [
-        { key: "Result", label: "Value", cppAccessor: "ResultOutput", accessorType: "enum", dataType: "float" }
-      ]
-    },
-    {
-      typeId: "SqrtFloat",
-      category: "Math",
-      typeGroup: "Float",
-      label: "Square Root (float)",
-      description: "Outputs the square root of the input.",
-      cppType: "wb::SquareRootNode<float>",
-      include: ARITHMETIC_HEADER,
-      varPrefix: "sqrt",
-      inputs: [
-        { key: "Value", label: "Value", cppAccessor: "ValueInput", defaultValue: "1.0f", accessorType: "enum", dataType: "float", hint: "Operand to square-root" }
-      ],
-      outputs: [
-        { key: "Result", label: "Root", cppAccessor: "ResultOutput", accessorType: "enum", dataType: "float" }
-      ]
-    },
-    {
-      typeId: "ClampFloat",
-      category: "Math",
-      typeGroup: "Float",
-      label: "Clamp (float)",
-      description: "Clamps the value between min and max.",
-      cppType: "wb::ClampNode<float>",
-      include: ARITHMETIC_HEADER,
-      varPrefix: "clamp",
-      inputs: [
-        { key: "Value", label: "Value", cppAccessor: "ValueInput", defaultValue: "0.0f", accessorType: "enum", dataType: "float", hint: "Value to clamp" },
-        { key: "Min", label: "Min", cppAccessor: "MinInput", defaultValue: "0.0f", accessorType: "enum", dataType: "float", hint: "Lower bound" },
-        { key: "Max", label: "Max", cppAccessor: "MaxInput", defaultValue: "1.0f", accessorType: "enum", dataType: "float", hint: "Upper bound" }
-      ],
-      outputs: [
-        { key: "Result", label: "Clamped", cppAccessor: "ResultOutput", accessorType: "enum", dataType: "float" }
-      ]
-    },
-    {
-      typeId: "LerpFloat",
-      category: "Math",
-      typeGroup: "Float",
-      label: "Lerp (float)",
-      description: "Linearly interpolates between A and B using T.",
-      cppType: "wb::LerpNode<float, float>",
-      include: ARITHMETIC_HEADER,
-      varPrefix: "lerp",
-      inputs: [
-        { key: "A", label: "A", cppAccessor: "AInput", defaultValue: "0.0f", accessorType: "enum", dataType: "float", hint: "Starting value" },
-        { key: "B", label: "B", cppAccessor: "BInput", defaultValue: "1.0f", accessorType: "enum", dataType: "float", hint: "Ending value" },
-        { key: "T", label: "T", cppAccessor: "WeightInput", defaultValue: "0.5f", accessorType: "enum", dataType: "float", hint: "Interpolation factor (0..1)" }
-      ],
-      outputs: [
-        { key: "Result", label: "Value", cppAccessor: "ResultOutput", accessorType: "enum", dataType: "float" }
-      ]
-    },
-    {
-      typeId: "SmoothstepFloat",
-      category: "Math",
-      typeGroup: "Float",
-      label: "Smoothstep (float)",
-      description: "Smoothly interpolates between A and B using T.",
-      cppType: "wb::SmoothstepNode<float>",
-      include: ARITHMETIC_HEADER,
-      varPrefix: "smooth",
-      inputs: [
-        { key: "A", label: "A", cppAccessor: "AInput", defaultValue: "0.0f", accessorType: "enum", dataType: "float", hint: "Starting value" },
-        { key: "B", label: "B", cppAccessor: "BInput", defaultValue: "1.0f", accessorType: "enum", dataType: "float", hint: "Ending value" },
-        { key: "T", label: "T", cppAccessor: "WeightInput", defaultValue: "0.5f", accessorType: "enum", dataType: "float", hint: "Interpolation factor before smoothstep" }
-      ],
-      outputs: [
-        { key: "Result", label: "Value", cppAccessor: "ResultOutput", accessorType: "enum", dataType: "float" }
-      ]
-    },
-    {
-      typeId: "MinMaxFloat",
-      category: "Math",
-      typeGroup: "Float",
-      label: "Min/Max (float)",
-      description: "Outputs the min and max across three samples.",
-      cppType: "wb::MinMaxNode<float, float, float>",
-      include: ARITHMETIC_HEADER,
-      varPrefix: "minmax",
-      inputs: [
-        { key: "A", label: "A", cppAccessor: "0", defaultValue: "0.0f", accessorType: "index", dataType: "float" },
-        { key: "B", label: "B", cppAccessor: "1", defaultValue: "0.5f", accessorType: "index", dataType: "float" },
-        { key: "C", label: "C", cppAccessor: "2", defaultValue: "1.0f", accessorType: "index", dataType: "float" }
-      ],
-      outputs: [
-        { key: "Min", label: "Min", cppAccessor: "MinOutput", accessorType: "enum", dataType: "float", hint: "Minimum value across all inputs" },
-        { key: "Max", label: "Max", cppAccessor: "MaxOutput", accessorType: "enum", dataType: "float", hint: "Maximum value across all inputs" }
+        { key: "SelectedIndex", label: "Selected Index", cppAccessor: "SelectedIndex", accessorType: "enum", dataType: "uint", defaultValue: "0u", hint: "Only this trigger input will be forwarded" }
       ]
     }
   ];
 }
 
-function buildRandomRangeNodes() {
-  return TYPE_VARIANTS.map(type => {
-    const suffix = type.id === "float" ? "Float" : type.label;
-    const varPrefix = type.id === "float" ? "randFloat" : `randVec${type.label.slice(-1)}`;
-    return {
-      typeId: `RandomRange${suffix}`,
-      category: "Random",
-      typeGroup: type.typeGroup,
-      label: `Random Range (${type.label})`,
-      description: `Outputs a random ${type.label.toLowerCase()} between Min and Max.`,
-      cppType: `wb::RandomRangeNode<${type.typeName}>`,
-      include: RNG_HEADER,
-      varPrefix,
-      inputs: [
-        { key: "Min", label: "Min", cppAccessor: "MinInput", defaultValue: type.zero, accessorType: "enum", dataType: type.id, hint: "Lower bound for the random pick" },
-        { key: "Max", label: "Max", cppAccessor: "MaxInput", defaultValue: type.one, accessorType: "enum", dataType: type.id, hint: "Upper bound for the random pick" }
-      ],
-      outputs: [
-        { key: "Value", label: "Random Value", cppAccessor: "ResultOutput", accessorType: "enum", dataType: type.id, hint: "Random value between Min and Max" }
+const CONST_VALUE_TYPES = ["float", "vec2", "vec3", "vec4", "bool", "int", "uint"];
+
+function getConstConfig(node, options = {}) {
+  const current = normalizeDataType(node?.customValues?.valueType);
+  const typeId = CONST_VALUE_TYPES.includes(current) ? current : CONST_VALUE_TYPES[0];
+  if (options.normalize && node?.customValues) {
+    node.customValues.valueType = typeId;
+  }
+  const variant = getVariantForType(typeId);
+  return { typeId, variant };
+}
+
+function handleConstConfigChange(node) {
+  if (!node || node.typeId !== "ConstValue") {
+    return;
+  }
+  node.constructorArgs = node.constructorArgs || {};
+  const { variant } = getConstConfig(node, { normalize: true });
+  node.constructorArgs.Value0 = variant?.zero ?? "";
+  ensureNodeDefaults(node);
+  renderAll();
+}
+
+function buildConstNodeDefinition() {
+  return {
+    typeId: "ConstValue",
+    category: "Math",
+    typeGroup: "Utility",
+    label: "Const",
+    description: "Outputs a constant value of the selected type.",
+    include: ARITHMETIC_HEADER,
+    varPrefix: "constValue",
+    cppTypeResolver: node => {
+      const { variant } = getConstConfig(node, { normalize: true });
+      return `wb::ConstNode<${variant?.typeName || "float"}>`;
+    },
+    buildConstructorArgs: node => {
+      const { typeId, variant } = getConstConfig(node, { normalize: true });
+      return [
+        {
+          key: "Value0",
+          label: "Value",
+          defaultValue: variant?.zero ?? "0.0f",
+          dataType: typeId
+        }
+      ];
+    },
+    buildOutputs: node => {
+      const { typeId, variant } = getConstConfig(node, { normalize: true });
+      return [
+        {
+          key: "Value",
+          label: `${variant?.label || "Value"} Output`,
+          cppAccessor: "0",
+          accessorType: "index",
+          dataType: typeId,
+          hint: "Constant value"
+        }
+      ];
+    },
+    customSetters: [
+      {
+        key: "valueType",
+        label: "Value Type",
+        inputType: "select",
+        defaultValue: CONST_VALUE_TYPES[0],
+        options: GENERAL_VALUE_TYPE_OPTIONS.filter(opt => CONST_VALUE_TYPES.includes(opt.value)),
+        displayLabel: true,
+        displayLabelPrefix: "Type: ",
+        onChange: handleConstConfigChange
+      }
+    ]
+  };
+}
+
+const LERP_VALUE_TYPES = ["float", "vec2", "vec3", "vec4"];
+
+function getLerpConfig(node, options = {}) {
+  const current = normalizeDataType(node?.customValues?.valueType);
+  const typeId = LERP_VALUE_TYPES.includes(current) ? current : LERP_VALUE_TYPES[0];
+  if (options.normalize && node?.customValues) {
+    node.customValues.valueType = typeId;
+  }
+  const variant = getVariantForType(typeId);
+  return { typeId, variant };
+}
+
+function handleLerpConfigChange(node) {
+  if (!node || node.typeId !== "LerpValue") {
+    return;
+  }
+  const { variant } = getLerpConfig(node, { normalize: true });
+  node.inputs = node.inputs || {};
+  node.inputs.A = variant?.zero ?? "";
+  node.inputs.B = variant?.one ?? "";
+  if (node.inputs.T == null || node.inputs.T === "") {
+    node.inputs.T = "0.5f";
+  }
+  syncNodeInputsWithDefinition(node);
+  renderAll();
+}
+
+function buildLerpNodeDefinition() {
+  return {
+    typeId: "LerpValue",
+    category: "Math",
+    typeGroup: "Interpolation",
+    label: "Lerp",
+    description: "Interpolates between A and B using T.",
+    include: ARITHMETIC_HEADER,
+    varPrefix: "lerpValue",
+    cppTypeResolver: node => {
+      const { variant } = getLerpConfig(node, { normalize: true });
+      const valueType = variant?.typeName || "float";
+      const weightType = "float";
+      return `wb::LerpNode<${valueType}, ${weightType}>`;
+    },
+    buildInputs: node => {
+      const { typeId, variant } = getLerpConfig(node, { normalize: true });
+      return [
+        { key: "A", label: "A", cppAccessor: "AInput", defaultValue: variant?.zero ?? "0.0f", accessorType: "enum", dataType: typeId, hint: "Starting value" },
+        { key: "B", label: "B", cppAccessor: "BInput", defaultValue: variant?.one ?? "1.0f", accessorType: "enum", dataType: typeId, hint: "Ending value" },
+        { key: "T", label: "T", cppAccessor: "WeightInput", defaultValue: "0.5f", accessorType: "enum", dataType: "float", hint: "Interpolation factor (0..1)" }
+      ];
+    },
+    buildOutputs: node => {
+      const { typeId } = getLerpConfig(node, { normalize: true });
+      return [
+        { key: "Result", label: "Value", cppAccessor: "ResultOutput", accessorType: "enum", dataType: typeId, hint: "Interpolated result" }
+      ];
+    },
+    customSetters: [
+      {
+        key: "valueType",
+        label: "Value Type",
+        inputType: "select",
+        defaultValue: LERP_VALUE_TYPES[0],
+        options: GENERAL_VALUE_TYPE_OPTIONS.filter(opt => LERP_VALUE_TYPES.includes(opt.value)),
+        displayLabel: true,
+        displayLabelPrefix: "Type: ",
+        onChange: handleLerpConfigChange
+      }
+    ]
+  };
+}
+
+const BINARY_MATH_TYPE_IDS = ["float", "vec2", "vec3", "vec4", "int", "uint"];
+
+const BINARY_MATH_CONFIGS = [
+  {
+    typeId: "Add",
+    label: "Add",
+    description: "Adds two values.",
+    varPrefix: "add",
+    resultLabel: "Sum",
+    resultHint: "Sum of both inputs",
+    defaults: variant => ({ A: variant.zero, B: variant.zero }),
+    inputHints: { A: "First addend", B: "Second addend" },
+    cppFactory: variant => `wb::AddNode<${variant.typeName}, ${variant.typeName}>`
+  },
+  {
+    typeId: "Subtract",
+    label: "Subtract",
+    description: "Subtracts B from A.",
+    varPrefix: "sub",
+    resultLabel: "Difference",
+    resultHint: "A minus B",
+    defaults: variant => ({ A: variant.zero, B: variant.zero }),
+    inputHints: { A: "Minuend", B: "Subtrahend" },
+    cppFactory: variant => `wb::SubtractNode<${variant.typeName}, ${variant.typeName}>`
+  },
+  {
+    typeId: "Multiply",
+    label: "Multiply",
+    description: "Multiplies two values.",
+    varPrefix: "mul",
+    resultLabel: "Product",
+    resultHint: "Product of both inputs",
+    defaults: variant => ({ A: variant.one, B: variant.one }),
+    inputHints: { A: "First factor", B: "Second factor" },
+    cppFactory: variant => `wb::MultiplyNode<${variant.typeName}, ${variant.typeName}>`
+  },
+  {
+    typeId: "Divide",
+    label: "Divide",
+    description: "Divides A by B.",
+    varPrefix: "div",
+    resultLabel: "Quotient",
+    resultHint: "A divided by B",
+    defaults: variant => ({ A: variant.one, B: variant.one }),
+    inputHints: { A: "Dividend", B: "Divisor" },
+    cppFactory: variant => `wb::DivideNode<${variant.typeName}, ${variant.typeName}>`
+  }
+];
+
+function buildBinaryMathNodes() {
+  return BINARY_MATH_CONFIGS.map(config => {
+    const valueType = createValueTypeConfig(config.allowedTypes || BINARY_MATH_TYPE_IDS, config.defaultType || (config.allowedTypes || BINARY_MATH_TYPE_IDS)[0], config.valueTypeKey || "valueType");
+    const handleTypeChange = node => {
+      if (!node || node.typeId !== config.typeId) {
+        return;
+      }
+      const previous = normalizeDataType(node.customValues?.[valueType.key]);
+      const { typeId } = valueType.get(node, { normalize: true });
+      if (previous !== typeId) {
+        resetNodeInputsToDefaults(node);
+      }
+      syncNodeInputsWithDefinition(node);
+      renderAll();
+    };
+    const definition = {
+      typeId: config.typeId,
+      category: "Math",
+      typeGroup: config.typeGroup || "Operators",
+      label: config.label,
+      description: config.description,
+      include: ARITHMETIC_HEADER,
+      varPrefix: config.varPrefix,
+      cppTypeResolver: node => {
+        const { variant } = valueType.get(node, { normalize: true });
+        return config.cppFactory(variant);
+      },
+      buildInputs: node => {
+        const { typeId, variant } = valueType.get(node, { normalize: true });
+        const defaults = config.defaults?.(variant) || {};
+        return [
+          {
+            key: "A",
+            label: config.inputLabels?.A ?? "A",
+            cppAccessor: "0",
+            accessorType: "index",
+            dataType: typeId,
+            defaultValue: defaults.A ?? variant.zero,
+            hint: config.inputHints?.A || "First operand"
+          },
+          {
+            key: "B",
+            label: config.inputLabels?.B ?? "B",
+            cppAccessor: "1",
+            accessorType: "index",
+            dataType: typeId,
+            defaultValue: defaults.B ?? variant.zero,
+            hint: config.inputHints?.B || "Second operand"
+          }
+        ];
+      },
+      buildOutputs: node => {
+        const { typeId } = valueType.get(node, { normalize: true });
+        return [
+          {
+            key: "Result",
+            label: config.resultLabel || "Result",
+            cppAccessor: "ResultOutput",
+            accessorType: "enum",
+            dataType: typeId,
+            hint: config.resultHint || "Operation result"
+          }
+        ];
+      },
+      customSetters: [
+        {
+          key: valueType.key,
+          label: "Value Type",
+          inputType: "select",
+          defaultValue: valueType.defaultType,
+          options: valueType.options,
+          displayLabel: true,
+          displayLabelPrefix: "Type: ",
+          onChange: handleTypeChange
+        }
       ]
     };
+    return definition;
   });
 }
 
-function formatPoolValues(rawValue, setter) {
+const SCALAR_MATH_CONFIGS = [
+  {
+    typeId: "Modulo",
+    label: "Modulo",
+    description: "Computes the remainder of A % B.",
+    varPrefix: "mod",
+    typeGroup: "Scalar",
+    allowedTypes: ["float", "int", "uint"],
+    buildInputs: ({ typeId, variant }) => [
+      { key: "A", label: "A", cppAccessor: "0", accessorType: "index", dataType: typeId, defaultValue: variant.zero, hint: "Dividend" },
+      { key: "B", label: "B", cppAccessor: "1", accessorType: "index", dataType: typeId, defaultValue: variant.one, hint: "Divisor" }
+    ],
+    buildOutputs: ({ typeId }) => [
+      { key: "Result", label: "Remainder", cppAccessor: "ResultOutput", accessorType: "enum", dataType: typeId, hint: "Remainder of A % B" }
+    ],
+    cppType: ({ variant }) => `wb::ModuloNode<${variant.typeName}, ${variant.typeName}>`
+  },
+  {
+    typeId: "Absolute",
+    label: "Absolute",
+    description: "Outputs the absolute value of the input.",
+    varPrefix: "abs",
+    typeGroup: "Scalar",
+    allowedTypes: ["float", "int"],
+    buildInputs: ({ typeId, variant }) => [
+      { key: "Value", label: "Value", cppAccessor: "ValueInput", accessorType: "enum", dataType: typeId, defaultValue: variant.zero, hint: "Operand to abs()" }
+    ],
+    buildOutputs: ({ typeId }) => [
+      { key: "Result", label: "Absolute", cppAccessor: "ResultOutput", accessorType: "enum", dataType: typeId, hint: "Absolute value of the input" }
+    ],
+    cppType: ({ variant }) => `wb::AbsoluteNode<${variant.typeName}>`
+  },
+  {
+    typeId: "Power",
+    label: "Power",
+    description: "Raises A to the B power.",
+    varPrefix: "pow",
+    typeGroup: "Scalar",
+    allowedTypes: ["float"],
+    buildInputs: ({ typeId, variant }) => [
+      { key: "Base", label: "Base", cppAccessor: "BaseInput", accessorType: "enum", dataType: typeId, defaultValue: variant.one, hint: "Value being raised to a power" },
+      { key: "Exponent", label: "Exponent", cppAccessor: "ExponentInput", accessorType: "enum", dataType: typeId, defaultValue: "2.0f", hint: "Exponent applied to the base" }
+    ],
+    buildOutputs: ({ typeId }) => [
+      { key: "Result", label: "Value", cppAccessor: "ResultOutput", accessorType: "enum", dataType: typeId, hint: "Result of pow(A, B)" }
+    ],
+    cppType: ({ variant }) => `wb::PowerNode<${variant.typeName}, ${variant.typeName}>`
+  },
+  {
+    typeId: "SquareRoot",
+    label: "Square Root",
+    description: "Outputs the square root of the input.",
+    varPrefix: "sqrt",
+    typeGroup: "Scalar",
+    allowedTypes: ["float"],
+    buildInputs: ({ typeId, variant }) => [
+      { key: "Value", label: "Value", cppAccessor: "ValueInput", accessorType: "enum", dataType: typeId, defaultValue: variant.one, hint: "Operand to square-root" }
+    ],
+    buildOutputs: ({ typeId }) => [
+      { key: "Result", label: "Root", cppAccessor: "ResultOutput", accessorType: "enum", dataType: typeId, hint: "Square root of the input" }
+    ],
+    cppType: ({ variant }) => `wb::SquareRootNode<${variant.typeName}>`
+  },
+  {
+    typeId: "Clamp",
+    label: "Clamp",
+    description: "Clamps the value between min and max.",
+    varPrefix: "clamp",
+    typeGroup: "Scalar",
+    allowedTypes: ["float", "int", "uint"],
+    buildInputs: ({ typeId, variant }) => [
+      { key: "Value", label: "Value", cppAccessor: "ValueInput", accessorType: "enum", dataType: typeId, defaultValue: variant.zero, hint: "Value to clamp" },
+      { key: "Min", label: "Min", cppAccessor: "MinInput", accessorType: "enum", dataType: typeId, defaultValue: variant.zero, hint: "Lower bound" },
+      { key: "Max", label: "Max", cppAccessor: "MaxInput", accessorType: "enum", dataType: typeId, defaultValue: variant.one, hint: "Upper bound" }
+    ],
+    buildOutputs: ({ typeId }) => [
+      { key: "Result", label: "Clamped", cppAccessor: "ResultOutput", accessorType: "enum", dataType: typeId, hint: "Value constrained to [Min, Max]" }
+    ],
+    cppType: ({ variant }) => `wb::ClampNode<${variant.typeName}>`
+  },
+  {
+    typeId: "Smoothstep",
+    label: "Smoothstep",
+    description: "Smoothly interpolates between A and B using T.",
+    varPrefix: "smooth",
+    typeGroup: "Interpolation",
+    allowedTypes: ["float"],
+    buildInputs: ({ typeId, variant }) => [
+      { key: "A", label: "A", cppAccessor: "AInput", accessorType: "enum", dataType: typeId, defaultValue: variant.zero, hint: "Starting value" },
+      { key: "B", label: "B", cppAccessor: "BInput", accessorType: "enum", dataType: typeId, defaultValue: variant.one, hint: "Ending value" },
+      { key: "T", label: "T", cppAccessor: "WeightInput", accessorType: "enum", dataType: "float", defaultValue: "0.5f", hint: "Interpolation factor (0..1)" }
+    ],
+    buildOutputs: ({ typeId }) => [
+      { key: "Result", label: "Value", cppAccessor: "ResultOutput", accessorType: "enum", dataType: typeId, hint: "Smoothed interpolation result" }
+    ],
+    cppType: () => "wb::SmoothstepNode<float>"
+  },
+  {
+    typeId: "MinMax",
+    label: "Min/Max",
+    description: "Outputs the min and max across three samples.",
+    varPrefix: "minmax",
+    typeGroup: "Utility",
+    allowedTypes: ["float", "int", "uint"],
+    buildInputs: ({ typeId, variant }) => {
+      const secondDefault = typeId === "float" ? "0.5f" : variant.one;
+      return [
+        { key: "A", label: "A", cppAccessor: "0", accessorType: "index", dataType: typeId, defaultValue: variant.zero, hint: "First value" },
+        { key: "B", label: "B", cppAccessor: "1", accessorType: "index", dataType: typeId, defaultValue: secondDefault, hint: "Second value" },
+        { key: "C", label: "C", cppAccessor: "2", accessorType: "index", dataType: typeId, defaultValue: variant.one, hint: "Third value" }
+      ];
+    },
+    buildOutputs: ({ typeId }) => [
+      { key: "Min", label: "Min", cppAccessor: "MinOutput", accessorType: "enum", dataType: typeId, hint: "Minimum value across all inputs" },
+      { key: "Max", label: "Max", cppAccessor: "MaxOutput", accessorType: "enum", dataType: typeId, hint: "Maximum value across all inputs" }
+    ],
+    cppType: ({ variant }) => `wb::MinMaxNode<${variant.typeName}, ${variant.typeName}, ${variant.typeName}>`
+  }
+];
+
+function buildScalarMathNodes() {
+  return SCALAR_MATH_CONFIGS.map(config => {
+    const allowed = config.allowedTypes && config.allowedTypes.length ? config.allowedTypes : ["float"];
+    const allowsSelection = allowed.length > 1;
+    const valueType = createValueTypeConfig(allowed, config.defaultType || allowed[0], allowsSelection ? (config.valueTypeKey || "valueType") : null);
+    const handleTypeChange = node => {
+      if (!node || node.typeId !== config.typeId || !allowsSelection) {
+        return;
+      }
+      const previous = normalizeDataType(node.customValues?.[valueType.key]);
+      const { typeId } = valueType.get(node, { normalize: true });
+      if (previous !== typeId) {
+        resetNodeInputsToDefaults(node);
+      }
+      syncNodeInputsWithDefinition(node);
+      renderAll();
+    };
+    const getPayload = node => {
+      const selection = valueType.get(node, { normalize: true });
+      return { node, ...selection };
+    };
+    const definition = {
+      typeId: config.typeId,
+      category: config.category || "Math",
+      typeGroup: config.typeGroup || "Scalar",
+      label: config.label,
+      description: config.description,
+      include: config.include || ARITHMETIC_HEADER,
+      varPrefix: config.varPrefix,
+      cppTypeResolver: node => config.cppType(getPayload(node)),
+      buildInputs: node => config.buildInputs(getPayload(node)),
+      buildOutputs: node => config.buildOutputs(getPayload(node)),
+      customSetters: allowsSelection
+        ? [
+            {
+              key: valueType.key,
+              label: "Value Type",
+              inputType: "select",
+              defaultValue: valueType.defaultType,
+              options: valueType.options,
+              displayLabel: true,
+              displayLabelPrefix: "Type: ",
+              onChange: handleTypeChange
+            }
+          ]
+        : []
+    };
+    return definition;
+  });
+}
+
+const INPUT_SELECTOR_MIN_COUNT = 2;
+const INPUT_SELECTOR_MAX_COUNT = 8;
+const INPUT_SELECTOR_DEFAULT_COUNT = 3;
+const INPUT_SELECTOR_DEFAULT_TYPE = "float";
+const INPUT_SELECTOR_TYPE_OPTIONS = [
+  { value: "float", label: "Float" },
+  { value: "vec2", label: "Vector2" },
+  { value: "vec3", label: "Vector3" },
+  { value: "vec4", label: "Vector4" },
+  { value: "bool", label: "Bool" },
+  { value: "int", label: "Int" },
+  { value: "uint", label: "UInt" }
+];
+const INPUT_SELECTOR_TYPE_SET = new Set(INPUT_SELECTOR_TYPE_OPTIONS.map(opt => opt.value));
+
+function getInputSelectorConfig(node, options = {}) {
+  const customValues = node?.customValues || {};
+  let typeId = normalizeDataType(customValues.valueType) || INPUT_SELECTOR_DEFAULT_TYPE;
+  if (!INPUT_SELECTOR_TYPE_SET.has(typeId)) {
+    typeId = INPUT_SELECTOR_DEFAULT_TYPE;
+  }
+  let count = parseInt(customValues.inputCount, 10);
+  if (!Number.isFinite(count)) {
+    count = INPUT_SELECTOR_DEFAULT_COUNT;
+  }
+  count = clamp(count, INPUT_SELECTOR_MIN_COUNT, INPUT_SELECTOR_MAX_COUNT);
+  if (options.normalize && node?.customValues) {
+    node.customValues.valueType = typeId;
+    node.customValues.inputCount = String(count);
+  }
+  return { typeId, count };
+}
+
+function buildInputSelectorCppType(node) {
+  const { typeId, count } = getInputSelectorConfig(node, { normalize: true });
+  const typeMeta = TYPE_VARIANT_MAP[typeId] || TYPE_VARIANT_MAP[INPUT_SELECTOR_DEFAULT_TYPE];
+  const cppTypeName = typeMeta?.typeName || "float";
+  const templateArgs = [cppTypeName, ...Array(Math.max(count - 1, 0)).fill(cppTypeName)];
+  return `wb::InputSelector<${templateArgs.join(", ")}>`;
+}
+
+function buildInputSelectorInputPorts(node) {
+  const { typeId, count } = getInputSelectorConfig(node, { normalize: true });
+  const typeMeta = TYPE_VARIANT_MAP[typeId] || TYPE_VARIANT_MAP[INPUT_SELECTOR_DEFAULT_TYPE];
+  const inputs = [];
+  for (let i = 0; i < count; i += 1) {
+    inputs.push({
+      key: `Value${i + 1}`,
+      label: `Value ${i + 1}`,
+      cppAccessor: `${i}`,
+      accessorType: "index",
+      dataType: typeId,
+      defaultValue: typeMeta?.zero ?? "0.0f",
+      hint: `Candidate value ${i + 1}`
+    });
+  }
+  inputs.push({
+    key: "SelectorInput",
+    label: "Selector",
+    cppAccessor: "SelectorInput",
+    accessorType: "enum",
+    dataType: "uint",
+    defaultValue: "0u",
+    hint: "Zero-based index of the input to forward"
+  });
+  return inputs;
+}
+
+function buildInputSelectorOutputPorts(node) {
+  const { typeId } = getInputSelectorConfig(node, { normalize: true });
+  return [
+    {
+      key: "Result",
+      label: "Result",
+      cppAccessor: "ResultOutput",
+      accessorType: "enum",
+      dataType: typeId,
+      hint: "Value sourced from the selected input"
+    }
+  ];
+}
+
+function handleInputSelectorConfigChange(node) {
+  if (!node || node.typeId !== "InputSelector") {
+    return;
+  }
+  getInputSelectorConfig(node, { normalize: true });
+  syncNodeInputsWithDefinition(node);
+  renderAll();
+}
+
+function buildInputSelectorNodes() {
+  return [
+    {
+      typeId: "InputSelector",
+      category: "Math",
+      typeGroup: "Utility",
+      label: "Input Selector",
+      description: "Routes one of several inputs to the output using an index selector.",
+      include: ARITHMETIC_HEADER,
+      varPrefix: "inputSelector",
+      cppTypeResolver: node => buildInputSelectorCppType(node),
+      buildInputs: node => buildInputSelectorInputPorts(node),
+      buildOutputs: node => buildInputSelectorOutputPorts(node),
+      customSetters: [
+        {
+          key: "valueType",
+          label: "Value Type",
+          inputType: "select",
+          defaultValue: INPUT_SELECTOR_DEFAULT_TYPE,
+          options: INPUT_SELECTOR_TYPE_OPTIONS,
+          displayLabel: true,
+          displayLabelPrefix: "Type: ",
+          onChange: handleInputSelectorConfigChange
+        },
+        {
+          key: "inputCount",
+          label: "Input Count",
+          inputType: "number",
+          defaultValue: String(INPUT_SELECTOR_DEFAULT_COUNT),
+          min: INPUT_SELECTOR_MIN_COUNT,
+          max: INPUT_SELECTOR_MAX_COUNT,
+          step: 1,
+          helperText: `Clamped between ${INPUT_SELECTOR_MIN_COUNT} and ${INPUT_SELECTOR_MAX_COUNT}`,
+          displayLabel: true,
+          displayLabelPrefix: "Inputs: ",
+          onChange: handleInputSelectorConfigChange
+        }
+      ]
+    }
+  ];
+}
+
+const RANDOM_VALUE_TYPES = ["float", "vec2", "vec3", "vec4", "bool", "int", "uint"];
+
+function formatPoolValues(rawValue, cppTypeName) {
   const trimmed = (rawValue || "").trim();
   if (!trimmed.length) {
     return null;
   }
+  const typeName = cppTypeName || "float";
   let contents = trimmed;
   if (contents.startsWith("{") && contents.endsWith("}")) {
     contents = contents.slice(1, -1).trim();
   }
-  return `std::vector<${setter.valueType}>{ ${contents} }`;
+  if (!contents.length) {
+    return null;
+  }
+  return `std::vector<${typeName}>{ ${contents} }`;
 }
 
-function buildRandomPoolNodes() {
-  return TYPE_VARIANTS.map(type => {
-    const suffix = type.id === "float" ? "Float" : type.label;
-    return {
-      typeId: `RandomPool${suffix}`,
-      category: "Random",
-      typeGroup: type.typeGroup,
-      label: `Random Pool (${type.label})`,
-      description: `Chooses a random ${type.label.toLowerCase()} from a pool.`,
-      cppType: `wb::RandomPoolNode<${type.typeName}>`,
-      include: RNG_HEADER,
-      varPrefix: `randPool${suffix}`,
-      outputs: [
-        { key: "Value", label: "Random Value", cppAccessor: "ValueOutput", accessorType: "enum", dataType: type.id, hint: "Random value selected from the pool" }
-      ],
-      customSetters: [
-        {
-          key: "poolValues",
-          label: "Pool Values",
-          defaultValue: "",
-          method: "SetPool",
-          inputType: "textarea",
-          helperText: "Comma-separated list, e.g. 0.2f, 0.5f, 0.9f",
-          valueType: type.typeName,
-          formatValue: (value, _def, setter) => formatPoolValues(value, setter)
-        }
-      ]
-    };
-  });
+function buildRandomRangeNodeDefinition() {
+  const typeSelector = createValueTypeConfig(RANDOM_VALUE_TYPES, "float", "valueType");
+  const handleTypeChange = node => {
+    if (!node || node.typeId !== "RandomRange") {
+      return;
+    }
+    resetNodeInputsToDefaults(node);
+    syncNodeInputsWithDefinition(node);
+    renderAll();
+  };
+  return {
+    typeId: "RandomRange",
+    category: "Random",
+    label: "Random Range",
+    description: "Outputs a random value between Min and Max.",
+    include: RNG_HEADER,
+    varPrefix: "randRange",
+    cppTypeResolver: node => {
+      const { variant } = typeSelector.get(node, { normalize: true });
+      return `wb::RandomRangeNode<${variant.typeName}>`;
+    },
+    buildInputs: node => {
+      const { typeId, variant } = typeSelector.get(node, { normalize: true });
+      return [
+        { key: "Min", label: "Min", cppAccessor: "MinInput", defaultValue: variant.zero, accessorType: "enum", dataType: typeId, hint: "Lower bound for the random pick" },
+        { key: "Max", label: "Max", cppAccessor: "MaxInput", defaultValue: variant.one, accessorType: "enum", dataType: typeId, hint: "Upper bound for the random pick" }
+      ];
+    },
+    buildOutputs: node => {
+      const { typeId } = typeSelector.get(node, { normalize: true });
+      return [
+        { key: "Value", label: "Random Value", cppAccessor: "ResultOutput", accessorType: "enum", dataType: typeId, hint: "Random value between Min and Max" }
+      ];
+    },
+    customSetters: [
+      {
+        key: typeSelector.key,
+        label: "Value Type",
+        inputType: "select",
+        defaultValue: typeSelector.defaultType,
+        options: typeSelector.options,
+        displayLabel: true,
+        displayLabelPrefix: "Type: ",
+        onChange: handleTypeChange
+      }
+    ]
+  };
 }
+
+function buildRandomPoolNodeDefinition() {
+  const typeSelector = createValueTypeConfig(RANDOM_VALUE_TYPES, "float", "valueType");
+  const handleTypeChange = node => {
+    if (!node || node.typeId !== "RandomPool") {
+      return;
+    }
+    syncNodeInputsWithDefinition(node);
+    renderAll();
+  };
+  return {
+    typeId: "RandomPool",
+    category: "Random",
+    label: "Random Pool",
+    description: "Chooses a random value from a user-defined pool.",
+    include: RNG_HEADER,
+    varPrefix: "randPool",
+    cppTypeResolver: node => {
+      const { variant } = typeSelector.get(node, { normalize: true });
+      return `wb::RandomPoolNode<${variant.typeName}>`;
+    },
+    buildOutputs: node => {
+      const { typeId } = typeSelector.get(node, { normalize: true });
+      return [
+        { key: "Value", label: "Random Value", cppAccessor: "ValueOutput", accessorType: "enum", dataType: typeId, hint: "Random value selected from the pool" }
+      ];
+    },
+    customSetters: [
+      {
+        key: typeSelector.key,
+        label: "Value Type",
+        inputType: "select",
+        defaultValue: typeSelector.defaultType,
+        options: typeSelector.options,
+        displayLabel: true,
+        displayLabelPrefix: "Type: ",
+        onChange: handleTypeChange
+      },
+      {
+        key: "poolValues",
+        label: "Pool Values",
+        defaultValue: "",
+        method: "SetPool",
+        inputType: "textarea",
+        rows: 3,
+        placeholder: "0.2f, 0.5f, 0.9f",
+        helperText: "Comma-separated list, e.g. 0.2f, 0.5f, 0.9f",
+        formatValue: (value, _def, setter, node) => {
+          const { variant } = typeSelector.get(node, { normalize: true });
+          return formatPoolValues(value, variant.typeName);
+        }
+      }
+    ]
+  };
+}
+
+const CONVERT_RULES = [
+  {
+    from: "bool",
+    to: "float",
+    label: "Bool → Float",
+    description: "Casts a boolean to float (false = 0.0f, true = 1.0f).",
+    typeGroup: "Scalar",
+    inputHint: "Boolean source value",
+    outputHint: "Converted float value"
+  },
+  {
+    from: "float",
+    to: "bool",
+    label: "Float → Bool",
+    description: "Casts a float to bool (non-zero becomes true).",
+    typeGroup: "Scalar",
+    inputHint: "Float source value",
+    outputHint: "Converted bool value"
+  },
+  {
+    from: "float",
+    to: "uint",
+    label: "Float → UInt",
+    description: "Casts a float value to an unsigned integer.",
+    typeGroup: "Scalar",
+    inputHint: "Float source value",
+    outputHint: "Converted unsigned value"
+  },
+  {
+    from: "float",
+    to: "int",
+    label: "Float → Int",
+    description: "Casts a float value to a signed integer.",
+    typeGroup: "Scalar",
+    inputHint: "Float source value",
+    outputHint: "Converted signed value"
+  },
+  {
+    from: "int",
+    to: "float",
+    label: "Int → Float",
+    description: "Casts a signed integer to float.",
+    typeGroup: "Scalar",
+    inputHint: "Signed integer source value",
+    outputHint: "Converted float value"
+  },
+  {
+    from: "uint",
+    to: "float",
+    label: "UInt → Float",
+    description: "Casts an unsigned integer to float.",
+    typeGroup: "Scalar",
+    inputHint: "Unsigned integer source value",
+    outputHint: "Converted float value"
+  },
+  {
+    from: "float",
+    to: "vec2",
+    label: "Float → Vec2",
+    description: "Broadcasts a float into all Vector2 components.",
+    typeGroup: "Vector",
+    inputHint: "Float source value",
+    outputHint: "Converted Vector2 value"
+  },
+  {
+    from: "float",
+    to: "vec3",
+    label: "Float → Vec3",
+    description: "Broadcasts a float into all Vector3 components.",
+    typeGroup: "Vector",
+    inputHint: "Float source value",
+    outputHint: "Converted Vector3 value"
+  },
+  {
+    from: "float",
+    to: "vec4",
+    label: "Float → Vec4",
+    description: "Broadcasts a float into all Vector4 components.",
+    typeGroup: "Vector",
+    inputHint: "Float source value",
+    outputHint: "Converted Vector4 value"
+  }
+];
+
+const CONVERT_RULE_MAP = new Map();
+const CONVERT_TARGET_OPTIONS = new Map();
+const CONVERT_FROM_OPTIONS = [];
+
+CONVERT_RULES.forEach(rule => {
+  const key = `${rule.from}->${rule.to}`;
+  CONVERT_RULE_MAP.set(key, rule);
+  if (!CONVERT_TARGET_OPTIONS.has(rule.from)) {
+    CONVERT_TARGET_OPTIONS.set(rule.from, []);
+    const fromVariant = TYPE_VARIANT_MAP[rule.from];
+    CONVERT_FROM_OPTIONS.push({
+      value: rule.from,
+      label: fromVariant?.label || formatDataTypeLabel(rule.from)
+    });
+  }
+  const toVariant = TYPE_VARIANT_MAP[rule.to];
+  CONVERT_TARGET_OPTIONS.get(rule.from).push({
+    value: rule.to,
+    label: toVariant?.label || formatDataTypeLabel(rule.to)
+  });
+});
+
+const CONVERT_DEFAULT_FROM = CONVERT_FROM_OPTIONS[0]?.value || "float";
+const CONVERT_DEFAULT_TO = (CONVERT_TARGET_OPTIONS.get(CONVERT_DEFAULT_FROM) || [])[0]?.value || CONVERT_DEFAULT_FROM;
+
+function getConvertTargetOptions(fromType) {
+  return CONVERT_TARGET_OPTIONS.get(fromType) || [];
+}
+
+function getConvertConfig(node, options = {}) {
+  const target = node || {};
+  target.customValues = target.customValues || {};
+  let fromType = normalizeDataType(target.customValues.fromType);
+  if (!CONVERT_TARGET_OPTIONS.has(fromType)) {
+    fromType = CONVERT_DEFAULT_FROM;
+  }
+  const targets = getConvertTargetOptions(fromType);
+  let toType = normalizeDataType(target.customValues.toType);
+  if (!targets.some(opt => opt.value === toType)) {
+    toType = targets[0]?.value || targets.value;
+  }
+  if (options.normalize && node) {
+    node.customValues.fromType = fromType;
+    node.customValues.toType = toType;
+  }
+  const key = `${fromType}->${toType}`;
+  const rule = CONVERT_RULE_MAP.get(key);
+  const fromVariant = getVariantForType(fromType);
+  const toVariant = getVariantForType(toType);
+  return { fromType, toType, rule, fromVariant, toVariant };
+}
+
+function updateConvertNode(node, { resetValue } = {}) {
+  if (!node || node.typeId !== "ConvertValue") {
+    return;
+  }
+  const config = getConvertConfig(node, { normalize: true });
+  if (resetValue) {
+    node.inputs = node.inputs || {};
+    node.inputs.Value = config.fromVariant?.zero ?? "";
+  }
+  syncNodeInputsWithDefinition(node);
+  renderAll();
+}
+
+const VECTOR_NODE_TYPES = ["vec2", "vec3", "vec4"];
+const VECTOR_COMPONENT_LABELS = {
+  vec2: ["X", "Y"],
+  vec3: ["X", "Y", "Z"],
+  vec4: ["X", "Y", "Z", "W"]
+};
+const VECTOR_COMPONENT_DEFAULTS = {
+  vec2: ["0.0f", "0.0f"],
+  vec3: ["0.0f", "0.0f", "0.0f"],
+  vec4: ["0.0f", "0.0f", "0.0f", "1.0f"]
+};
+const COMPOSE_VECTOR_CPP_TYPES = {
+  vec2: "wb::ComposeVector2Node",
+  vec3: "wb::ComposeVector3Node",
+  vec4: "wb::ComposeVector4Node"
+};
+const DECOMPOSE_VECTOR_CPP_TYPES = {
+  vec2: "wb::DecomposeVector2Node",
+  vec3: "wb::DecomposeVector3Node",
+  vec4: "wb::DecomposeVector4Node"
+};
 
 const NOISE_TEMPLATES = [
   {
@@ -1019,30 +1834,334 @@ const NOISE_TEMPLATES = [
 ];
 
 function buildNoiseNodes() {
-  const nodes = [];
-  NOISE_TEMPLATES.forEach(template => {
-    Object.entries(template.alias).forEach(([typeId, cppType]) => {
-      const type = TYPE_VARIANT_MAP[typeId];
-      if (!type) {
-        return;
+  return NOISE_TEMPLATES.map(template => {
+    const allowedTypes = Object.keys(template.alias || {});
+    if (!allowedTypes.length) {
+      return null;
+    }
+    const allowsSelection = allowedTypes.length > 1;
+    const valueTypeKey = allowsSelection ? (template.valueTypeKey || "valueType") : null;
+    const typeSelector = createValueTypeConfig(allowedTypes, template.defaultType || allowedTypes[0], valueTypeKey);
+    const handleTypeChange = allowsSelection
+      ? node => {
+          if (!node || node.typeId !== template.id) {
+            return;
+          }
+          const previous = normalizeDataType(node.customValues?.[typeSelector.key]);
+          const { typeId } = typeSelector.get(node, { normalize: true });
+          if (previous !== typeId) {
+            resetNodeInputsToDefaults(node);
+          }
+          syncNodeInputsWithDefinition(node);
+          renderAll();
+        }
+      : null;
+    const resolveVariant = node => typeSelector.get(node, { normalize: true });
+    return {
+      typeId: template.id,
+      category: "Noise",
+      typeGroup: template.typeGroup || "Generators",
+      label: template.label,
+      description: template.description,
+      include: NOISE_HEADER,
+      varPrefix: template.varPrefix,
+      cppTypeResolver: node => {
+        const { typeId } = resolveVariant(node);
+        return template.alias[typeId] || template.alias[allowedTypes[0]];
+      },
+      buildInputs: node => {
+        const { variant } = resolveVariant(node);
+        if (typeof template.inputsFactory === "function") {
+          return template.inputsFactory(variant);
+        }
+        return [];
+      },
+      buildOutputs: node => {
+        const { typeId } = resolveVariant(node);
+        return [
+          { key: "Noise", label: "Vector", cppAccessor: "NoiseOutput", accessorType: "enum", dataType: typeId, hint: "Sampled noise vector" }
+        ];
+      },
+      customSetters: allowsSelection
+        ? [
+            {
+              key: typeSelector.key,
+              label: "Value Type",
+              inputType: "select",
+              defaultValue: typeSelector.defaultType,
+              options: typeSelector.options,
+              displayLabel: true,
+              displayLabelPrefix: "Type: ",
+              onChange: handleTypeChange
+            }
+          ]
+        : []
+    };
+  }).filter(Boolean);
+}
+
+function buildConvertNodeDefinition() {
+  return {
+    typeId: "ConvertValue",
+    category: "Conversion",
+    typeGroup: "Scalar",
+    label: "Convert",
+    description: "Converts a value between compatible types.",
+    include: CONVERSION_HEADER,
+    varPrefix: "convertValue",
+    cppTypeResolver: node => {
+      const { fromVariant, toVariant } = getConvertConfig(node, { normalize: true });
+      return `wb::ConvertNode<${fromVariant?.typeName || "float"}, ${toVariant?.typeName || "float"}>`;
+    },
+    buildInputs: node => {
+      const { fromType, fromVariant, rule } = getConvertConfig(node, { normalize: true });
+      return [
+        {
+          key: "Value",
+          label: formatDataTypeLabel(fromType) || "Value",
+          cppAccessor: "ValueInput",
+          accessorType: "enum",
+          dataType: fromType,
+          defaultValue: fromVariant?.zero ?? "0.0f",
+          hint: rule?.inputHint || "Source value"
+        }
+      ];
+    },
+    buildOutputs: node => {
+      const { toType, rule } = getConvertConfig(node, { normalize: true });
+      return [
+        {
+          key: "Result",
+          label: formatDataTypeLabel(toType) || "Result",
+          cppAccessor: "ResultOutput",
+          accessorType: "enum",
+          dataType: toType,
+          hint: rule?.outputHint || "Converted value"
+        }
+      ];
+    },
+    customSetters: [
+      {
+        key: "fromType",
+        label: "From Type",
+        inputType: "select",
+        defaultValue: CONVERT_DEFAULT_FROM,
+        optionsResolver: () => CONVERT_FROM_OPTIONS,
+        displayLabel: true,
+        displayLabelPrefix: "From: ",
+        onChange: (node, value, prev) => updateConvertNode(node, { resetValue: value !== prev })
+      },
+      {
+        key: "toType",
+        label: "To Type",
+        inputType: "select",
+        defaultValue: CONVERT_DEFAULT_TO,
+        optionsResolver: node => {
+          const { fromType } = getConvertConfig(node || {});
+          return getConvertTargetOptions(fromType);
+        },
+        displayLabel: true,
+        displayLabelPrefix: "To: ",
+        onChange: node => updateConvertNode(node, { resetValue: false })
       }
-      nodes.push({
-        typeId: `${template.id}${type.suffix}`,
-        category: "Noise",
-        typeGroup: type.typeGroup,
-        label: `${template.label} (${type.label})`,
-        description: template.description,
-        cppType,
-        include: NOISE_HEADER,
-        varPrefix: template.varPrefix,
-        inputs: template.inputsFactory(type),
-        outputs: [
-          { key: "Noise", label: "Vector", cppAccessor: "NoiseOutput", accessorType: "enum", dataType: type.id, hint: "Sampled noise vector" }
-        ]
-      });
-    });
-  });
-  return nodes;
+    ]
+  };
+}
+
+function buildComposeVectorNodeDefinition() {
+  const typeSelector = createValueTypeConfig(VECTOR_NODE_TYPES, "vec3", "vectorType");
+  const handleTypeChange = node => {
+    if (!node || node.typeId !== "ComposeVector") {
+      return;
+    }
+    typeSelector.get(node, { normalize: true });
+    resetNodeInputsToDefaults(node);
+    syncNodeInputsWithDefinition(node);
+    renderAll();
+  };
+  return {
+    typeId: "ComposeVector",
+    category: "Conversion",
+    typeGroup: "Vector",
+    label: "Compose Vector",
+    description: "Builds a Vector from float components.",
+    include: CONVERSION_HEADER,
+    varPrefix: "composeVec",
+    cppTypeResolver: node => {
+      const { typeId } = typeSelector.get(node, { normalize: true });
+      return COMPOSE_VECTOR_CPP_TYPES[typeId] || COMPOSE_VECTOR_CPP_TYPES.vec3;
+    },
+    buildInputs: node => {
+      const { typeId } = typeSelector.get(node, { normalize: true });
+      const componentLabels = VECTOR_COMPONENT_LABELS[typeId] || ["X", "Y", "Z"];
+      const defaults = VECTOR_COMPONENT_DEFAULTS[typeId] || [];
+      return componentLabels.map((label, idx) => ({
+        key: label,
+        label,
+        cppAccessor: `${label}Input`,
+        accessorType: "enum",
+        dataType: "float",
+        defaultValue: defaults[idx] ?? "0.0f",
+        hint: `${label} component`
+      }));
+    },
+    buildOutputs: node => {
+      const { typeId } = typeSelector.get(node, { normalize: true });
+      return [
+        {
+          key: "Vector",
+          label: formatDataTypeLabel(typeId) || "Vector",
+          cppAccessor: "ResultOutput",
+          accessorType: "enum",
+          dataType: typeId,
+          hint: "Composed vector value"
+        }
+      ];
+    },
+    customSetters: [
+      {
+        key: "vectorType",
+        label: "Vector Type",
+        inputType: "select",
+        defaultValue: typeSelector.defaultType,
+        options: typeSelector.options,
+        displayLabel: true,
+        displayLabelPrefix: "Type: ",
+        onChange: handleTypeChange
+      }
+    ]
+  };
+}
+
+function buildDecomposeVectorNodeDefinition() {
+  const typeSelector = createValueTypeConfig(VECTOR_NODE_TYPES, "vec3", "vectorType");
+  const handleTypeChange = node => {
+    if (!node || node.typeId !== "DecomposeVector") {
+      return;
+    }
+    typeSelector.get(node, { normalize: true });
+    resetNodeInputsToDefaults(node);
+    syncNodeInputsWithDefinition(node);
+    renderAll();
+  };
+  return {
+    typeId: "DecomposeVector",
+    category: "Conversion",
+    typeGroup: "Vector",
+    label: "Decompose Vector",
+    description: "Splits a Vector into float components.",
+    include: CONVERSION_HEADER,
+    varPrefix: "decomposeVec",
+    cppTypeResolver: node => {
+      const { typeId } = typeSelector.get(node, { normalize: true });
+      return DECOMPOSE_VECTOR_CPP_TYPES[typeId] || DECOMPOSE_VECTOR_CPP_TYPES.vec3;
+    },
+    buildInputs: node => {
+      const { typeId, variant } = typeSelector.get(node, { normalize: true });
+      return [
+        {
+          key: "Vector",
+          label: formatDataTypeLabel(typeId) || "Vector",
+          cppAccessor: "ValueInput",
+          accessorType: "enum",
+          dataType: typeId,
+          defaultValue: variant?.zero ?? "Vector3{}",
+          hint: "Vector value to split"
+        }
+      ];
+    },
+    buildOutputs: node => {
+      const { typeId } = typeSelector.get(node, { normalize: true });
+      const componentLabels = VECTOR_COMPONENT_LABELS[typeId] || ["X", "Y", "Z"];
+      return componentLabels.map(label => ({
+        key: label,
+        label,
+        cppAccessor: `${label}Output`,
+        accessorType: "enum",
+        dataType: "float",
+        hint: `${label} component`
+      }));
+    },
+    customSetters: [
+      {
+        key: "vectorType",
+        label: "Vector Type",
+        inputType: "select",
+        defaultValue: typeSelector.defaultType,
+        options: typeSelector.options,
+        displayLabel: true,
+        displayLabelPrefix: "Type: ",
+        onChange: handleTypeChange
+      }
+    ]
+  };
+}
+
+function buildNoiseNodes() {
+  return NOISE_TEMPLATES.map(template => {
+    const allowedTypes = Object.keys(template.alias || {});
+    if (!allowedTypes.length) {
+      return null;
+    }
+    const allowsSelection = allowedTypes.length > 1;
+    const valueTypeKey = allowsSelection ? (template.valueTypeKey || "valueType") : null;
+    const typeSelector = createValueTypeConfig(allowedTypes, template.defaultType || allowedTypes[0], valueTypeKey);
+    const handleTypeChange = allowsSelection
+      ? node => {
+          if (!node || node.typeId !== template.id) {
+            return;
+          }
+          const previous = normalizeDataType(node.customValues?.[typeSelector.key]);
+          const { typeId } = typeSelector.get(node, { normalize: true });
+          if (previous !== typeId) {
+            resetNodeInputsToDefaults(node);
+          }
+          syncNodeInputsWithDefinition(node);
+          renderAll();
+        }
+      : null;
+    const resolveVariant = node => typeSelector.get(node, { normalize: true });
+    return {
+      typeId: template.id,
+      category: "Noise",
+      typeGroup: template.typeGroup || "Generators",
+      label: template.label,
+      description: template.description,
+      include: NOISE_HEADER,
+      varPrefix: template.varPrefix,
+      cppTypeResolver: node => {
+        const { typeId } = resolveVariant(node);
+        return template.alias[typeId] || template.alias[allowedTypes[0]];
+      },
+      buildInputs: node => {
+        const { variant } = resolveVariant(node);
+        if (typeof template.inputsFactory === "function") {
+          return template.inputsFactory(variant);
+        }
+        return [];
+      },
+      buildOutputs: node => {
+        const { typeId } = resolveVariant(node);
+        return [
+          { key: "Noise", label: "Vector", cppAccessor: "NoiseOutput", accessorType: "enum", dataType: typeId, hint: "Sampled noise vector" }
+        ];
+      },
+      customSetters: allowsSelection
+        ? [
+            {
+              key: typeSelector.key,
+              label: "Value Type",
+              inputType: "select",
+              defaultValue: typeSelector.defaultType,
+              options: typeSelector.options,
+              displayLabel: true,
+              displayLabelPrefix: "Type: ",
+              onChange: handleTypeChange
+            }
+          ]
+        : []
+    };
+  }).filter(Boolean);
 }
 
 function createNoiseInputs(type) {
@@ -1262,265 +2381,11 @@ applyPortHints(ANIMATION_NODES);
 
 
 function buildConversionNodes() {
-  const nodes = [
-    {
-      typeId: "ConvertBoolToFloat",
-      category: "Conversion",
-      typeGroup: "Scalar",
-      label: "Bool → Float",
-      description: "Casts a boolean to float (false = 0.0f, true = 1.0f).",
-      cppType: "wb::ConvertNode<bool, float>",
-      include: CONVERSION_HEADER,
-      varPrefix: "b2f",
-      inputs: [
-        { key: "Value", label: "Bool", cppAccessor: "ValueInput", defaultValue: "false", accessorType: "enum", dataType: "bool", hint: "Boolean source value" }
-      ],
-      outputs: [
-        { key: "Result", label: "Float", cppAccessor: "ResultOutput", accessorType: "enum", dataType: "float", hint: "Converted float value" }
-      ]
-    },
-    {
-      typeId: "ConvertFloatToBool",
-      category: "Conversion",
-      typeGroup: "Scalar",
-      label: "Float → Bool",
-      description: "Casts a float to bool (non-zero becomes true).",
-      cppType: "wb::ConvertNode<float, bool>",
-      include: CONVERSION_HEADER,
-      varPrefix: "f2b",
-      inputs: [
-        { key: "Value", label: "Float", cppAccessor: "ValueInput", defaultValue: "0.0f", accessorType: "enum", dataType: "float", hint: "Float source value" }
-      ],
-      outputs: [
-        { key: "Result", label: "Bool", cppAccessor: "ResultOutput", accessorType: "enum", dataType: "bool", hint: "Converted bool value" }
-      ]
-    },
-    {
-      typeId: "ConvertFloatToUInt",
-      category: "Conversion",
-      typeGroup: "Scalar",
-      label: "Float → UInt",
-      description: "Casts a float value to an unsigned integer.",
-      cppType: "wb::ConvertNode<float, uint32_t>",
-      include: CONVERSION_HEADER,
-      varPrefix: "f2u",
-      inputs: [
-        { key: "Value", label: "Float", cppAccessor: "ValueInput", defaultValue: "0.0f", accessorType: "enum", dataType: "float", hint: "Float source value" }
-      ],
-      outputs: [
-        { key: "Result", label: "UInt", cppAccessor: "ResultOutput", accessorType: "enum", dataType: "uint", hint: "Converted unsigned value" }
-      ]
-    },
-    {
-      typeId: "ConvertFloatToInt",
-      category: "Conversion",
-      typeGroup: "Scalar",
-      label: "Float → Int",
-      description: "Casts a float value to a signed integer.",
-      cppType: "wb::ConvertNode<float, int32_t>",
-      include: CONVERSION_HEADER,
-      varPrefix: "f2i",
-      inputs: [
-        { key: "Value", label: "Float", cppAccessor: "ValueInput", defaultValue: "0.0f", accessorType: "enum", dataType: "float", hint: "Float source value" }
-      ],
-      outputs: [
-        { key: "Result", label: "Int", cppAccessor: "ResultOutput", accessorType: "enum", dataType: "int", hint: "Converted signed value" }
-      ]
-    },
-    {
-      typeId: "ConvertIntToFloat",
-      category: "Conversion",
-      typeGroup: "Scalar",
-      label: "Int → Float",
-      description: "Casts a signed integer to float.",
-      cppType: "wb::ConvertNode<int32_t, float>",
-      include: CONVERSION_HEADER,
-      varPrefix: "i2f",
-      inputs: [
-        { key: "Value", label: "Int", cppAccessor: "ValueInput", defaultValue: "0", accessorType: "enum", dataType: "int", hint: "Signed integer source value" }
-      ],
-      outputs: [
-        { key: "Result", label: "Float", cppAccessor: "ResultOutput", accessorType: "enum", dataType: "float", hint: "Converted float value" }
-      ]
-    },
-    {
-      typeId: "ConvertUIntToFloat",
-      category: "Conversion",
-      typeGroup: "Scalar",
-      label: "UInt → Float",
-      description: "Casts an unsigned integer to float.",
-      cppType: "wb::ConvertNode<uint32_t, float>",
-      include: CONVERSION_HEADER,
-      varPrefix: "u2f",
-      inputs: [
-        { key: "Value", label: "UInt", cppAccessor: "ValueInput", defaultValue: "0u", accessorType: "enum", dataType: "uint", hint: "Unsigned integer source value" }
-      ],
-      outputs: [
-        { key: "Result", label: "Float", cppAccessor: "ResultOutput", accessorType: "enum", dataType: "float", hint: "Converted float value" }
-      ]
-    },
-    {
-      typeId: "ConvertFloatToVec2",
-      category: "Conversion",
-      typeGroup: "Vector",
-      label: "Float → Vec2",
-      description: "Broadcasts a float into all Vector2 components.",
-      cppType: "wb::ConvertNode<float, Vector2>",
-      include: CONVERSION_HEADER,
-      varPrefix: "f2v2",
-      inputs: [
-        { key: "Value", label: "Float", cppAccessor: "ValueInput", defaultValue: "0.0f", accessorType: "enum", dataType: "float", hint: "Float source value" }
-      ],
-      outputs: [
-        { key: "Result", label: "Vector2", cppAccessor: "ResultOutput", accessorType: "enum", dataType: "vec2", hint: "Converted Vector2 value" }
-      ]
-    },
-    {
-      typeId: "ConvertFloatToVec3",
-      category: "Conversion",
-      typeGroup: "Vector",
-      label: "Float → Vec3",
-      description: "Broadcasts a float into all Vector3 components.",
-      cppType: "wb::ConvertNode<float, Vector3>",
-      include: CONVERSION_HEADER,
-      varPrefix: "f2v3",
-      inputs: [
-        { key: "Value", label: "Float", cppAccessor: "ValueInput", defaultValue: "0.0f", accessorType: "enum", dataType: "float", hint: "Float source value" }
-      ],
-      outputs: [
-        { key: "Result", label: "Vector3", cppAccessor: "ResultOutput", accessorType: "enum", dataType: "vec3", hint: "Converted Vector3 value" }
-      ]
-    },
-    {
-      typeId: "ConvertFloatToVec4",
-      category: "Conversion",
-      typeGroup: "Vector",
-      label: "Float → Vec4",
-      description: "Broadcasts a float into all Vector4 components.",
-      cppType: "wb::ConvertNode<float, Vector4>",
-      include: CONVERSION_HEADER,
-      varPrefix: "f2v4",
-      inputs: [
-        { key: "Value", label: "Float", cppAccessor: "ValueInput", defaultValue: "0.0f", accessorType: "enum", dataType: "float", hint: "Float source value" }
-      ],
-      outputs: [
-        { key: "Result", label: "Vector4", cppAccessor: "ResultOutput", accessorType: "enum", dataType: "vec4", hint: "Converted Vector4 value" }
-      ]
-    }
+  return [
+    buildConvertNodeDefinition(),
+    buildComposeVectorNodeDefinition(),
+    buildDecomposeVectorNodeDefinition()
   ];
-
-  nodes.push(
-    {
-      typeId: "ComposeVec2",
-      category: "Conversion",
-      typeGroup: "Vector",
-      label: "Compose Vec2",
-      description: "Builds a Vector2 from two floats.",
-      cppType: "wb::ComposeVector2Node",
-      include: CONVERSION_HEADER,
-      varPrefix: "composeV2",
-      inputs: [
-        { key: "X", label: "X", cppAccessor: "XInput", accessorType: "enum", dataType: "float", defaultValue: "0.0f", hint: "X component" },
-        { key: "Y", label: "Y", cppAccessor: "YInput", accessorType: "enum", dataType: "float", defaultValue: "0.0f", hint: "Y component" }
-      ],
-      outputs: [
-        { key: "Vector", label: "Vector2", cppAccessor: "ResultOutput", accessorType: "enum", dataType: "vec2", hint: "Composed Vector2" }
-      ]
-    },
-    {
-      typeId: "ComposeVec3",
-      category: "Conversion",
-      typeGroup: "Vector",
-      label: "Compose Vec3",
-      description: "Builds a Vector3 from three floats.",
-      cppType: "wb::ComposeVector3Node",
-      include: CONVERSION_HEADER,
-      varPrefix: "composeV3",
-      inputs: [
-        { key: "X", label: "X", cppAccessor: "XInput", accessorType: "enum", dataType: "float", defaultValue: "0.0f", hint: "X component" },
-        { key: "Y", label: "Y", cppAccessor: "YInput", accessorType: "enum", dataType: "float", defaultValue: "0.0f", hint: "Y component" },
-        { key: "Z", label: "Z", cppAccessor: "ZInput", accessorType: "enum", dataType: "float", defaultValue: "0.0f", hint: "Z component" }
-      ],
-      outputs: [
-        { key: "Vector", label: "Vector3", cppAccessor: "ResultOutput", accessorType: "enum", dataType: "vec3", hint: "Composed Vector3" }
-      ]
-    },
-    {
-      typeId: "ComposeVec4",
-      category: "Conversion",
-      typeGroup: "Vector",
-      label: "Compose Vec4",
-      description: "Builds a Vector4 from four floats.",
-      cppType: "wb::ComposeVector4Node",
-      include: CONVERSION_HEADER,
-      varPrefix: "composeV4",
-      inputs: [
-        { key: "X", label: "X", cppAccessor: "XInput", accessorType: "enum", dataType: "float", defaultValue: "0.0f", hint: "X component" },
-        { key: "Y", label: "Y", cppAccessor: "YInput", accessorType: "enum", dataType: "float", defaultValue: "0.0f", hint: "Y component" },
-        { key: "Z", label: "Z", cppAccessor: "ZInput", accessorType: "enum", dataType: "float", defaultValue: "0.0f", hint: "Z component" },
-        { key: "W", label: "W", cppAccessor: "WInput", accessorType: "enum", dataType: "float", defaultValue: "1.0f", hint: "W component" }
-      ],
-      outputs: [
-        { key: "Vector", label: "Vector4", cppAccessor: "ResultOutput", accessorType: "enum", dataType: "vec4", hint: "Composed Vector4" }
-      ]
-    },
-    {
-      typeId: "DecomposeVec2",
-      category: "Conversion",
-      typeGroup: "Vector",
-      label: "Decompose Vec2",
-      description: "Splits a Vector2 into its components.",
-      cppType: "wb::DecomposeVector2Node",
-      include: CONVERSION_HEADER,
-      varPrefix: "decomposeV2",
-      inputs: [
-        { key: "Vector", label: "Vector2", cppAccessor: "ValueInput", accessorType: "enum", dataType: "vec2", defaultValue: "Vector2{}", hint: "Vector2 value to split" }
-      ],
-      outputs: [
-        { key: "X", label: "X", cppAccessor: "XOutput", accessorType: "enum", dataType: "float", hint: "X component" },
-        { key: "Y", label: "Y", cppAccessor: "YOutput", accessorType: "enum", dataType: "float", hint: "Y component" }
-      ]
-    },
-    {
-      typeId: "DecomposeVec3",
-      category: "Conversion",
-      typeGroup: "Vector",
-      label: "Decompose Vec3",
-      description: "Splits a Vector3 into its components.",
-      cppType: "wb::DecomposeVector3Node",
-      include: CONVERSION_HEADER,
-      varPrefix: "decomposeV3",
-      inputs: [
-        { key: "Vector", label: "Vector3", cppAccessor: "ValueInput", accessorType: "enum", dataType: "vec3", defaultValue: "Vector3{}", hint: "Vector3 value to split" }
-      ],
-      outputs: [
-        { key: "X", label: "X", cppAccessor: "XOutput", accessorType: "enum", dataType: "float", hint: "X component" },
-        { key: "Y", label: "Y", cppAccessor: "YOutput", accessorType: "enum", dataType: "float", hint: "Y component" },
-        { key: "Z", label: "Z", cppAccessor: "ZOutput", accessorType: "enum", dataType: "float", hint: "Z component" }
-      ]
-    },
-    {
-      typeId: "DecomposeVec4",
-      category: "Conversion",
-      typeGroup: "Vector",
-      label: "Decompose Vec4",
-      description: "Splits a Vector4 into its components.",
-      cppType: "wb::DecomposeVector4Node",
-      include: CONVERSION_HEADER,
-      varPrefix: "decomposeV4",
-      inputs: [
-        { key: "Vector", label: "Vector4", cppAccessor: "ValueInput", accessorType: "enum", dataType: "vec4", defaultValue: "Vector4{}", hint: "Vector4 value to split" }
-      ],
-      outputs: [
-        { key: "X", label: "X", cppAccessor: "XOutput", accessorType: "enum", dataType: "float", hint: "X component" },
-        { key: "Y", label: "Y", cppAccessor: "YOutput", accessorType: "enum", dataType: "float", hint: "Y component" },
-        { key: "Z", label: "Z", cppAccessor: "ZOutput", accessorType: "enum", dataType: "float", hint: "Z component" },
-        { key: "W", label: "W", cppAccessor: "WOutput", accessorType: "enum", dataType: "float", hint: "W component" }
-      ]
-    }
-  );
-
-  return nodes;
 }
 
 function buildTransformNodes() {
@@ -1627,7 +2492,9 @@ function repeatTypeList(typeName, count) {
   return Array.from({ length: count }, () => typeName).join(", ");
 }
 
-const BOOLEAN_INPUT_VARIANTS = [2, 3, 4];
+const BOOLEAN_LOGIC_MIN_INPUTS = 2;
+const BOOLEAN_LOGIC_MAX_INPUTS = 8;
+const BOOLEAN_LOGIC_DEFAULT_INPUTS = 2;
 
 const BOOLEAN_LOGIC_CONFIGS = [
   {
@@ -1659,35 +2526,74 @@ const BOOLEAN_LOGIC_CONFIGS = [
   }
 ];
 
+function getBooleanLogicInputCount(node, options = {}) {
+  const raw = parseInt(node?.customValues?.inputCount, 10);
+  let count = Number.isFinite(raw) ? raw : BOOLEAN_LOGIC_DEFAULT_INPUTS;
+  count = clamp(count, BOOLEAN_LOGIC_MIN_INPUTS, BOOLEAN_LOGIC_MAX_INPUTS);
+  if (options.normalize && node?.customValues) {
+    node.customValues.inputCount = String(count);
+  }
+  return count;
+}
+
 function buildBooleanLogicNodes() {
-  const nodes = [];
-  BOOLEAN_LOGIC_CONFIGS.forEach(config => {
-    BOOLEAN_INPUT_VARIANTS.forEach(count => {
-      const templateArgs = repeatTypeList("bool", count);
-      const inputs = Array.from({ length: count }, (_, idx) => ({
-        key: `Value${idx + 1}`,
-        label: `Value ${idx + 1}`,
-        cppAccessor: `${idx}`,
-        accessorType: "index",
-        dataType: "bool",
-        defaultValue: idx === 0 ? "true" : "false",
-        hint: config.inputHint
-      }));
-      nodes.push({
-        typeId: `${config.id}${count}`,
-        category: "Conditional",
-        typeGroup: "Bool",
-        label: `${config.label} (${count} inputs)`,
-        description: config.description,
-        cppType: `wb::${config.cppClass}<${templateArgs}>`,
-        include: CONDITIONAL_HEADER,
-        varPrefix: `${config.varPrefix}${count}`,
-        inputs,
-        outputs: [
-          { key: "Result", label: "Result", cppAccessor: "ResultOutput", accessorType: "enum", dataType: "bool", hint: config.outputHint }
-        ]
-      });
-    });
+  const nodes = BOOLEAN_LOGIC_CONFIGS.map(config => {
+    const handleInputCountChange = node => {
+      if (!node || node.typeId !== config.id) {
+        return;
+      }
+      getBooleanLogicInputCount(node, { normalize: true });
+      syncNodeInputsWithDefinition(node);
+      renderAll();
+    };
+    return {
+      typeId: config.id,
+      category: "Conditional",
+      typeGroup: "Bool",
+      label: config.label,
+      description: config.description,
+      include: CONDITIONAL_HEADER,
+      varPrefix: config.varPrefix,
+      cppTypeResolver: node => {
+        const count = getBooleanLogicInputCount(node, { normalize: true });
+        const templateArgs = repeatTypeList("bool", count);
+        return `wb::${config.cppClass}<${templateArgs}>`;
+      },
+      buildInputs: node => {
+        const count = getBooleanLogicInputCount(node, { normalize: true });
+        const inputs = [];
+        for (let idx = 0; idx < count; idx += 1) {
+          inputs.push({
+            key: `Value${idx + 1}`,
+            label: `Value ${idx + 1}`,
+            cppAccessor: `${idx}`,
+            accessorType: "index",
+            dataType: "bool",
+            defaultValue: idx === 0 ? "true" : "false",
+            hint: config.inputHint
+          });
+        }
+        return inputs;
+      },
+      outputs: [
+        { key: "Result", label: "Result", cppAccessor: "ResultOutput", accessorType: "enum", dataType: "bool", hint: config.outputHint }
+      ],
+      customSetters: [
+        {
+          key: "inputCount",
+          label: "Input Count",
+          inputType: "number",
+          min: BOOLEAN_LOGIC_MIN_INPUTS,
+          max: BOOLEAN_LOGIC_MAX_INPUTS,
+          step: 1,
+          defaultValue: String(BOOLEAN_LOGIC_DEFAULT_INPUTS),
+          helperText: `Between ${BOOLEAN_LOGIC_MIN_INPUTS} and ${BOOLEAN_LOGIC_MAX_INPUTS}`,
+          displayLabel: true,
+          displayLabelPrefix: "Inputs: ",
+          onChange: handleInputCountChange
+        }
+      ]
+    };
   });
 
   nodes.push({
@@ -1761,38 +2667,70 @@ const COMPARISON_CONFIGS = [
   }
 ];
 
+const COMPARISON_VALUE_TYPES = ["float", "vec2", "vec3", "vec4", "bool", "int", "uint"];
+
 function buildComparisonNodes() {
-  const nodes = [];
-  COMPARISON_CONFIGS.forEach(config => {
-    TYPE_VARIANTS.forEach(type => {
-      nodes.push({
-        typeId: `${config.id}${type.suffix}`,
-        category: "Conditional",
-        typeGroup: type.typeGroup,
-        label: `${config.label} (${type.label})`,
-        description: config.description,
-        cppType: `wb::${config.cppClass}<${type.typeName}>`,
-        include: CONDITIONAL_HEADER,
-        varPrefix: `${config.varPrefix}${type.varSuffix}`,
-        inputs: [
-          { key: "A", label: "A", cppAccessor: "AInput", accessorType: "enum", dataType: type.id, defaultValue: type.zero, hint: "Left operand" },
-          { key: "B", label: "B", cppAccessor: "BInput", accessorType: "enum", dataType: type.id, defaultValue: type.one, hint: "Right operand" }
-        ],
-        outputs: [
-          { key: "Result", label: "Result", cppAccessor: "ResultOutput", accessorType: "enum", dataType: "bool", hint: config.resultHint }
-        ]
-      });
-    });
+  return COMPARISON_CONFIGS.map(config => {
+    const allowed = config.allowedTypes?.length ? config.allowedTypes : COMPARISON_VALUE_TYPES;
+    const typeSelector = createValueTypeConfig(allowed, config.defaultType || allowed[0], config.valueTypeKey || "valueType");
+    const handleTypeChange = node => {
+      if (!node || node.typeId !== config.id) {
+        return;
+      }
+      const previous = normalizeDataType(node.customValues?.[typeSelector.key]);
+      const { typeId } = typeSelector.get(node, { normalize: true });
+      if (previous !== typeId) {
+        resetNodeInputsToDefaults(node);
+      }
+      syncNodeInputsWithDefinition(node);
+      renderAll();
+    };
+    return {
+      typeId: config.id,
+      category: "Conditional",
+      typeGroup: config.typeGroup || "Comparisons",
+      label: config.label,
+      description: config.description,
+      include: CONDITIONAL_HEADER,
+      varPrefix: config.varPrefix,
+      cppTypeResolver: node => {
+        const { variant } = typeSelector.get(node, { normalize: true });
+        return `wb::${config.cppClass}<${variant.typeName}>`;
+      },
+      buildInputs: node => {
+        const { typeId, variant } = typeSelector.get(node, { normalize: true });
+        return [
+          { key: "A", label: "A", cppAccessor: "AInput", accessorType: "enum", dataType: typeId, defaultValue: variant.zero, hint: "Left operand" },
+          { key: "B", label: "B", cppAccessor: "BInput", accessorType: "enum", dataType: typeId, defaultValue: variant.one, hint: "Right operand" }
+        ];
+      },
+      buildOutputs: () => [
+        { key: "Result", label: "Result", cppAccessor: "ResultOutput", accessorType: "enum", dataType: "bool", hint: config.resultHint }
+      ],
+      customSetters: [
+        {
+          key: typeSelector.key,
+          label: "Value Type",
+          inputType: "select",
+          defaultValue: typeSelector.defaultType,
+          options: typeSelector.options,
+          displayLabel: true,
+          displayLabelPrefix: "Type: ",
+          onChange: handleTypeChange
+        }
+      ]
+    };
   });
-  return nodes;
 }
 
 const GENERAL_NODES = [
-  ...buildConstNodes(),
+  buildConstNodeDefinition(),
   ...buildBinaryMathNodes(),
   ...buildScalarMathNodes(),
-  ...buildRandomRangeNodes(),
-  ...buildRandomPoolNodes(),
+  buildLerpNodeDefinition(),
+  ...buildInputSelectorNodes(),
+  buildRandomRangeNodeDefinition(),
+  buildRandomPoolNodeDefinition(),
   ...buildNoiseNodes(),
   ...buildBooleanLogicNodes(),
   ...buildComparisonNodes(),
@@ -1801,29 +2739,23 @@ const GENERAL_NODES = [
 ];
 
 const TRANSFORM_NODES = buildTransformNodes();
+const FLOW_CONTROL_NODES = buildFlowControlNodes();
 
 applyPortHints(GENERAL_NODES);
 applyPortHints(TRANSFORM_NODES);
+applyPortHints(FLOW_CONTROL_NODES);
 
-const NODE_LIBRARY = [...PARTICLE_NODES, ...ANIMATION_NODES, ...GENERAL_NODES, ...TRANSFORM_NODES];
+const NODE_LIBRARY = [...PARTICLE_NODES, ...ANIMATION_NODES, ...GENERAL_NODES, ...TRANSFORM_NODES, ...FLOW_CONTROL_NODES];
 
-const CATEGORY_ORDER = ["Particles", "Animation", "Math", "Conditional", "Conversion", "Easing", "Noise", "Random"];
+const CATEGORY_ORDER = ["Particles", "Animation", "Math", "Conditional", "Conversion", "Easing", "Noise", "Random", "Flow Control"];
 
 const NODE_LOOKUP = new Map();
 const CATEGORY_MAP = new Map();
 
 NODE_LIBRARY.forEach(def => {
   def.category = def.category || "Particles";
-  def.inputs = (def.inputs || []).map(input => ({
-    ...input,
-    accessorType: input.accessorType || "enum",
-    dataType: input.dataType || null
-  }));
-  def.outputs = (def.outputs || []).map(output => ({
-    ...output,
-    accessorType: output.accessorType || "index",
-    dataType: output.dataType || null
-  }));
+  def.inputs = (def.inputs || []).map(normalizeInputDefinition).filter(Boolean);
+  def.outputs = (def.outputs || []).map(normalizeOutputDefinition).filter(Boolean);
   NODE_LOOKUP.set(def.typeId, def);
   if (!CATEGORY_MAP.has(def.category)) {
     CATEGORY_MAP.set(def.category, []);
@@ -2201,6 +3133,92 @@ function ensureCustomValueDefaults(target, defSetters = []) {
   });
 }
 
+function resetNodeInputsToDefaults(node) {
+  if (!node) {
+    return;
+  }
+  const def = getNodeDefinition(node.typeId);
+  if (!def) {
+    return;
+  }
+  const resolvedInputs = resolveNodeInputs(def, node);
+  node.inputs = node.inputs || {};
+  resolvedInputs.forEach(input => {
+    if (!input?.key) {
+      return;
+    }
+    node.inputs[input.key] = input.defaultValue ?? "";
+  });
+}
+
+function ensureNodeDefaults(node) {
+  if (!node) {
+    return;
+  }
+  const def = getNodeDefinition(node.typeId);
+  if (!def) {
+    return;
+  }
+  node.inputs = node.inputs || {};
+  node.options = node.options || {};
+  node.constructorArgs = node.constructorArgs || {};
+  node.customValues = node.customValues || {};
+  ensureCustomValueDefaults(node.customValues, def.customSetters);
+  const resolvedInputs = resolveNodeInputs(def, node);
+  ensureInputDefaults(node.inputs, resolvedInputs);
+  ensureOptionDefaults(node.options, def.options);
+  const constructorArgs = resolveNodeConstructorArgs(def, node);
+  ensureConstructorDefaults(node.constructorArgs, constructorArgs);
+}
+
+function syncNodeInputsWithDefinition(node) {
+  if (!node) {
+    return false;
+  }
+  const def = getNodeDefinition(node.typeId);
+  if (!def) {
+    return false;
+  }
+  node.inputs = node.inputs || {};
+  const resolvedInputs = resolveNodeInputs(def, node);
+  const allowedKeys = new Set();
+  let mutatedInputs = false;
+  resolvedInputs.forEach(input => {
+    if (!input?.key) {
+      return;
+    }
+    allowedKeys.add(input.key);
+    if (!(input.key in node.inputs)) {
+      node.inputs[input.key] = input.defaultValue ?? "";
+      mutatedInputs = true;
+    }
+  });
+  Object.keys(node.inputs).forEach(key => {
+    if (!allowedKeys.has(key)) {
+      delete node.inputs[key];
+      mutatedInputs = true;
+    }
+  });
+  let connectionsChanged = false;
+  if (node.id) {
+    const nextConnections = [];
+    state.dataConnections.forEach(conn => {
+      if (conn.to === node.id && !allowedKeys.has(conn.toPort)) {
+        connectionsChanged = true;
+        return;
+      }
+      nextConnections.push(conn);
+    });
+    if (connectionsChanged) {
+      state.dataConnections = nextConnections;
+    }
+  }
+  if (mutatedInputs || connectionsChanged) {
+    markStateDirty();
+  }
+  return mutatedInputs || connectionsChanged;
+}
+
 function copySelectionToClipboard() {
   const nodes = getSelectedNodes();
   if (!nodes.length) {
@@ -2288,15 +3306,11 @@ function pasteClipboardNodes() {
     const options = clonePlainObject(nodeData.options);
     const constructorArgs = clonePlainObject(nodeData.constructorArgs);
     const customValues = clonePlainObject(nodeData.customValues);
-    ensureInputDefaults(inputs, def.inputs);
-    ensureOptionDefaults(options, def.options);
-    ensureConstructorDefaults(constructorArgs, def.constructorArgs);
-    ensureCustomValueDefaults(customValues, def.customSetters);
     const position = {
       x: (nodeData.position?.x ?? 0) + offset.x,
       y: (nodeData.position?.y ?? 0) + offset.y
     };
-    state.nodes.push({
+    const node = {
       id: nodeId,
       typeId: nodeData.typeId,
       label,
@@ -2308,7 +3322,9 @@ function pasteClipboardNodes() {
       customValues,
       inlineExpanded: !!nodeData.inlineExpanded,
       createdAt: Date.now()
-    });
+    };
+    ensureNodeDefaults(node);
+    state.nodes.push(node);
     newIds.push(nodeId);
   });
   clipboardData.connections?.forEach(conn => {
@@ -2472,6 +3488,183 @@ function cloneRecord(record) {
   return record ? { ...record } : {};
 }
 
+const LEGACY_NODE_MIGRATIONS = new Map([
+  ["ConstFloat", entry => migrateLegacyConstNode(entry, "float")],
+  ["ConstVec2", entry => migrateLegacyConstNode(entry, "vec2")],
+  ["ConstVec3", entry => migrateLegacyConstNode(entry, "vec3")],
+  ["ConstVec4", entry => migrateLegacyConstNode(entry, "vec4")],
+  ["LerpFloat", entry => migrateLegacyLerpNode(entry, "float")]
+]);
+
+function migrateLegacyTypedValueNode(entry, newTypeId, targetTypeId, key = "valueType") {
+  return {
+    ...entry,
+    typeId: newTypeId,
+    customValues: {
+      ...(entry.customValues || {}),
+      [key]: targetTypeId
+    }
+  };
+}
+
+function registerLegacyValueTypeMigration(oldId, newId, typeId) {
+  LEGACY_NODE_MIGRATIONS.set(oldId, entry => migrateLegacyTypedValueNode(entry, newId, typeId));
+}
+
+function migrateLegacyBooleanNode(entry, targetId, inputCount) {
+  const clamped = clamp(inputCount, BOOLEAN_LOGIC_MIN_INPUTS, BOOLEAN_LOGIC_MAX_INPUTS);
+  return {
+    ...entry,
+    typeId: targetId,
+    customValues: {
+      ...(entry.customValues || {}),
+      inputCount: String(clamped)
+    }
+  };
+}
+
+const LEGACY_ARITHMETIC_SUFFIXES = [
+  { suffix: "Float", typeId: "float" },
+  { suffix: "Vec2", typeId: "vec2" },
+  { suffix: "Vec3", typeId: "vec3" },
+  { suffix: "Vec4", typeId: "vec4" }
+];
+
+["Add", "Subtract", "Multiply", "Divide"].forEach(baseId => {
+  LEGACY_ARITHMETIC_SUFFIXES.forEach(entry => {
+    registerLegacyValueTypeMigration(`${baseId}${entry.suffix}`, baseId, entry.typeId);
+  });
+});
+
+[
+  { oldId: "ModuloFloat", newId: "Modulo", typeId: "float" },
+  { oldId: "AbsFloat", newId: "Absolute", typeId: "float" },
+  { oldId: "PowerFloat", newId: "Power", typeId: "float" },
+  { oldId: "SqrtFloat", newId: "SquareRoot", typeId: "float" },
+  { oldId: "ClampFloat", newId: "Clamp", typeId: "float" },
+  { oldId: "SmoothstepFloat", newId: "Smoothstep", typeId: "float" },
+  { oldId: "MinMaxFloat", newId: "MinMax", typeId: "float" }
+].forEach(mapping => {
+  registerLegacyValueTypeMigration(mapping.oldId, mapping.newId, mapping.typeId);
+});
+
+["BoolAnd", "BoolOr", "BoolXor"].forEach(baseId => {
+  [2, 3, 4].forEach(count => {
+    LEGACY_NODE_MIGRATIONS.set(`${baseId}${count}`, entry => migrateLegacyBooleanNode(entry, baseId, count));
+  });
+});
+
+COMPARISON_CONFIGS.forEach(config => {
+  TYPE_VARIANTS.forEach(type => {
+    registerLegacyValueTypeMigration(`${config.id}${type.suffix}`, config.id, type.id);
+  });
+});
+
+const LEGACY_RANDOM_SUFFIXES = [
+  { suffix: "Float", typeId: "float" },
+  { suffix: "Vector2", typeId: "vec2" },
+  { suffix: "Vector3", typeId: "vec3" },
+  { suffix: "Vector4", typeId: "vec4" },
+  { suffix: "Bool", typeId: "bool" },
+  { suffix: "Int", typeId: "int" },
+  { suffix: "UInt", typeId: "uint" }
+];
+
+LEGACY_RANDOM_SUFFIXES.forEach(entry => {
+  registerLegacyValueTypeMigration(`RandomRange${entry.suffix}`, "RandomRange", entry.typeId);
+  registerLegacyValueTypeMigration(`RandomPool${entry.suffix}`, "RandomPool", entry.typeId);
+});
+
+NOISE_TEMPLATES.forEach(template => {
+  Object.keys(template.alias || {}).forEach(typeId => {
+    const variant = TYPE_VARIANT_MAP[typeId];
+    if (!variant) {
+      return;
+    }
+    registerLegacyValueTypeMigration(`${template.id}${variant.suffix}`, template.id, typeId);
+  });
+});
+
+function migrateLegacyConvertNode(entry, fromType, toType) {
+  return {
+    ...entry,
+    typeId: "ConvertValue",
+    customValues: {
+      ...(entry.customValues || {}),
+      fromType,
+      toType
+    }
+  };
+}
+
+[
+  { id: "ConvertBoolToFloat", from: "bool", to: "float" },
+  { id: "ConvertFloatToBool", from: "float", to: "bool" },
+  { id: "ConvertFloatToUInt", from: "float", to: "uint" },
+  { id: "ConvertFloatToInt", from: "float", to: "int" },
+  { id: "ConvertIntToFloat", from: "int", to: "float" },
+  { id: "ConvertUIntToFloat", from: "uint", to: "float" },
+  { id: "ConvertFloatToVec2", from: "float", to: "vec2" },
+  { id: "ConvertFloatToVec3", from: "float", to: "vec3" },
+  { id: "ConvertFloatToVec4", from: "float", to: "vec4" }
+].forEach(mapping => {
+  LEGACY_NODE_MIGRATIONS.set(mapping.id, entry => migrateLegacyConvertNode(entry, mapping.from, mapping.to));
+});
+
+function migrateLegacyVectorNode(entry, targetId, vectorType) {
+  return {
+    ...entry,
+    typeId: targetId,
+    customValues: {
+      ...(entry.customValues || {}),
+      vectorType
+    }
+  };
+}
+
+[
+  { id: "ComposeVec2", target: "ComposeVector", type: "vec2" },
+  { id: "ComposeVec3", target: "ComposeVector", type: "vec3" },
+  { id: "ComposeVec4", target: "ComposeVector", type: "vec4" },
+  { id: "DecomposeVec2", target: "DecomposeVector", type: "vec2" },
+  { id: "DecomposeVec3", target: "DecomposeVector", type: "vec3" },
+  { id: "DecomposeVec4", target: "DecomposeVector", type: "vec4" }
+].forEach(mapping => {
+  LEGACY_NODE_MIGRATIONS.set(mapping.id, entry => migrateLegacyVectorNode(entry, mapping.target, mapping.type));
+});
+
+function migrateLegacyConstNode(entry, typeId) {
+  const variant = getVariantForType(typeId);
+  return {
+    ...entry,
+    typeId: "ConstValue",
+    customValues: { ...(entry.customValues || {}), valueType: typeId },
+    constructorArgs: {
+      ...(entry.constructorArgs || {}),
+      Value0: (entry.constructorArgs?.Value0 ?? variant?.zero ?? "0.0f")
+    }
+  };
+}
+
+function migrateLegacyLerpNode(entry, typeId) {
+  return {
+    ...entry,
+    typeId: "LerpValue",
+    customValues: { ...(entry.customValues || {}), valueType: typeId }
+  };
+}
+
+function migrateLegacyNodeEntry(entry) {
+  if (!entry || typeof entry !== "object") {
+    return entry;
+  }
+  const handler = LEGACY_NODE_MIGRATIONS.get(entry.typeId);
+  if (!handler) {
+    return entry;
+  }
+  return handler(entry);
+}
+
 function buildGraphSnapshot() {
   const rootNode = getRootNode();
   const nodes = state.nodes
@@ -2573,6 +3766,7 @@ function normalizeSnapshotNodes(entries) {
   const usedIds = new Set([ROOT_NODE_ID]);
   let fallbackIndex = 1;
   entries.forEach(entry => {
+    entry = migrateLegacyNodeEntry(entry);
     if (!entry || typeof entry !== "object") {
       return;
     }
@@ -2671,6 +3865,7 @@ function applyGraphSnapshot(snapshot, options = {}) {
       }
     }
     state.nodes = [root, ...normalizedNodes];
+    state.nodes.forEach(node => ensureNodeDefaults(node));
     const nodeIds = new Set(state.nodes.map(node => node.id));
     state.connections = filterConnections(snapshot.connections, nodeIds);
     state.dataConnections = filterDataConnections(snapshot.dataConnections, nodeIds);
@@ -2753,8 +3948,9 @@ function getNodeSummaryTexts(node) {
       return;
     }
     let labelText = currentValue;
-    if (setter.options?.length) {
-      const option = setter.options.find(opt => opt.value === currentValue);
+    const optionsSource = typeof setter.optionsResolver === "function" ? setter.optionsResolver(node) : setter.options;
+    if (optionsSource?.length) {
+      const option = optionsSource.find(opt => opt.value === currentValue);
       if (option?.label) {
         labelText = option.label;
       }
@@ -3221,41 +4417,23 @@ function addNode(typeId) {
   const label = `${def.label} ${count}`;
   const position = getDefaultNodePosition();
 
-  const inputs = {};
-  def.inputs.forEach(input => {
-    inputs[input.key] = input.defaultValue ?? "";
-  });
-
-  const options = {};
-  (def.options ?? []).forEach(option => {
-    options[option.key] = option.defaultValue ?? false;
-  });
-
-  const constructorArgs = {};
-  (def.constructorArgs ?? []).forEach(arg => {
-    constructorArgs[arg.key] = arg.defaultValue ?? "";
-  });
-
-  const customValues = {};
-  (def.customSetters ?? []).forEach(setter => {
-    customValues[setter.key] = setter.defaultValue ?? "";
-  });
-
   const variableName = makeUniqueIdentifier(def.varPrefix || def.typeId.toLowerCase());
 
-  state.nodes.push({
+  const node = {
     id: nodeId,
     typeId,
     label,
     variableName,
     position,
-    inputs,
-    options,
-    constructorArgs,
-    customValues,
+    inputs: {},
+    options: {},
+    constructorArgs: {},
+    customValues: {},
     inlineExpanded: false,
     createdAt: Date.now()
-  });
+  };
+  ensureNodeDefaults(node);
+  state.nodes.push(node);
 
   setSelectedNodes([nodeId], nodeId, { silent: true });
   markStateDirty();
@@ -3368,6 +4546,8 @@ function renderNodes() {
     body.textContent = def.description ?? "";
 
     const summaryTexts = getNodeSummaryTexts(node);
+    const inputDefs = resolveNodeInputs(def, node);
+    const outputDefs = resolveNodeOutputs(def, node);
 
     card.appendChild(header);
     if (summaryTexts.length) {
@@ -3382,10 +4562,10 @@ function renderNodes() {
     const ports = document.createElement("div");
     ports.className = "node-ports";
 
-    if (def.inputs?.length) {
+    if (inputDefs.length) {
       const inputCol = document.createElement("div");
       inputCol.className = "ports-column inputs";
-      def.inputs.forEach(inputDef => {
+      inputDefs.forEach(inputDef => {
         const row = document.createElement("div");
         row.className = "port-row input";
         const dataType = normalizeDataType(inputDef.dataType);
@@ -3426,7 +4606,7 @@ function renderNodes() {
 
     const outputCol = document.createElement("div");
     outputCol.className = "ports-column outputs";
-    (def.outputs || []).forEach(outputDef => {
+    outputDefs.forEach(outputDef => {
       const row = document.createElement("div");
       row.className = "port-row output";
       const dataType = normalizeDataType(outputDef.dataType);
@@ -3712,13 +4892,14 @@ function appendNodeEditorContent(node, context, target) {
 
   target.appendChild(general);
 
-  if (def?.constructorArgs?.length) {
+  const constructorArgs = resolveNodeConstructorArgs(def, node);
+  if (constructorArgs.length) {
     const ctorSection = document.createElement("div");
     ctorSection.className = sectionClass;
     const ctorTitle = document.createElement(headingTag);
     ctorTitle.textContent = "Constructor";
     ctorSection.appendChild(ctorTitle);
-    def.constructorArgs.forEach(arg => {
+    constructorArgs.forEach(arg => {
       const currentValue = node.constructorArgs[arg.key] ?? arg.defaultValue ?? "";
       const row = createFormRow(
         arg.label,
@@ -3744,7 +4925,8 @@ function appendNodeEditorContent(node, context, target) {
     target.appendChild(ctorSection);
   }
 
-  if (def?.inputs?.length) {
+  const inputDefs = resolveNodeInputs(def, node);
+  if (inputDefs.length) {
     const inputsSection = document.createElement("div");
     inputsSection.className = sectionClass;
     const titleRow = document.createElement("div");
@@ -3760,7 +4942,7 @@ function appendNodeEditorContent(node, context, target) {
     titleRow.appendChild(resetBtn);
     inputsSection.appendChild(titleRow);
 
-    def.inputs.forEach(inputDef => {
+    inputDefs.forEach(inputDef => {
       const currentValue = node.inputs[inputDef.key] ?? "";
       const dataType = resolveTypeHint(inputDef);
       const row = createFormRow(
@@ -3785,7 +4967,8 @@ function appendNodeEditorContent(node, context, target) {
         chip.className = "connection-chip";
         const sourceNode = getNodeById(dataLink.from);
         const sourceDef = getNodeDefinition(sourceNode?.typeId ?? "");
-        const outputDef = sourceDef?.outputs?.find(out => out.key === dataLink.fromPort);
+        const sourceOutputs = resolveNodeOutputs(sourceDef, sourceNode);
+        const outputDef = sourceOutputs.find(out => out.key === dataLink.fromPort);
         const sourceLabel = sourceNode?.label ?? dataLink.from;
         const portLabel = outputDef?.label ?? dataLink.fromPort;
         chip.textContent = `Connected to ${sourceLabel} • ${portLabel}`;
@@ -3904,7 +5087,8 @@ function appendNodeEditorContent(node, context, target) {
     dataOutgoing.forEach(conn => {
       const targetNode = getNodeById(conn.to);
       const targetDef = getNodeDefinition(targetNode?.typeId ?? "");
-      const targetInput = targetDef?.inputs?.find(i => i.key === conn.toPort);
+      const targetInputs = resolveNodeInputs(targetDef, targetNode);
+      const targetInput = targetInputs.find(i => i.key === conn.toPort);
       const item = document.createElement("li");
       item.textContent = `${targetNode?.label ?? conn.to} • ${targetInput?.label ?? conn.toPort}`;
       const removeBtn = document.createElement("button");
@@ -3931,7 +5115,8 @@ function appendNodeEditorContent(node, context, target) {
     dataIncoming.forEach(conn => {
       const source = getNodeById(conn.from);
       const sourceDef = getNodeDefinition(source?.typeId ?? "");
-      const outputDef = sourceDef?.outputs?.find(out => out.key === conn.fromPort);
+      const sourceOutputs = resolveNodeOutputs(sourceDef, source);
+      const outputDef = sourceOutputs.find(out => out.key === conn.fromPort);
       const item = document.createElement("li");
       item.textContent = `${source?.label ?? conn.from} • ${outputDef?.label ?? conn.fromPort}`;
       const removeBtn = document.createElement("button");
@@ -3954,6 +5139,7 @@ function appendNodeEditorContent(node, context, target) {
     customSection.appendChild(title);
     def.customSetters.forEach(setter => {
       const currentValue = node.customValues[setter.key] ?? setter.defaultValue ?? "";
+      const resolvedOptions = typeof setter.optionsResolver === "function" ? setter.optionsResolver(node) : setter.options;
       const row = createFormRow(
         setter.label,
         currentValue,
@@ -3963,6 +5149,9 @@ function appendNodeEditorContent(node, context, target) {
             return;
           }
           node.customValues[setter.key] = value;
+          if (typeof setter.onChange === "function") {
+            setter.onChange(node, value, prev);
+          }
           updateNodeCardSubtitle(node);
           refreshInspectorIfNecessary(node.id, context);
           markStateDirty();
@@ -3973,7 +5162,10 @@ function appendNodeEditorContent(node, context, target) {
           multiline: setter.inputType === "textarea",
           rows: setter.rows,
           inputType: setter.inputType,
-          options: setter.options,
+          options: resolvedOptions,
+          min: setter.min,
+          max: setter.max,
+          step: setter.step,
           compact: isInline
         }
       );
@@ -4028,7 +5220,7 @@ function createFormRow(labelText, value, onChange, options = {}) {
     });
   } else if (!input) {
     input = document.createElement("input");
-    input.type = options.type || "text";
+    input.type = options.type || inputType || "text";
     input.value = value ?? "";
   }
 
@@ -4036,8 +5228,19 @@ function createFormRow(labelText, value, onChange, options = {}) {
     if (options.compact) {
       input.classList.add("compact-input");
     }
-    if (options.placeholder && input instanceof HTMLInputElement) {
-      input.placeholder = options.placeholder;
+    if (input instanceof HTMLInputElement) {
+      if (options.placeholder) {
+        input.placeholder = options.placeholder;
+      }
+      if (options.min != null) {
+        input.min = String(options.min);
+      }
+      if (options.max != null) {
+        input.max = String(options.max);
+      }
+      if (options.step != null) {
+        input.step = String(options.step);
+      }
     }
     if (!(typeHint === "bool" || typeHint === "float" || typeHint === "transform")) {
       ["pointerdown", "click"].forEach(evt => {
@@ -4530,11 +5733,15 @@ function updateTransformModalWarning(message) {
 }
 
 function resetInputsToDefaults(node, definition, context) {
-  if (!node || !definition?.inputs?.length) {
+  if (!node || !definition) {
+    return;
+  }
+  const inputDefs = resolveNodeInputs(definition, node);
+  if (!inputDefs.length) {
     return;
   }
   let changed = false;
-  definition.inputs.forEach(input => {
+  inputDefs.forEach(input => {
     const key = input.key;
     if (!key) {
       return;
@@ -4959,8 +6166,8 @@ function addDataConnection(fromNodeId, fromPortKey, toNodeId, toPortKey) {
   if (!fromDef || !toDef) {
     return;
   }
-  const outputDef = (fromDef.outputs || []).find(out => out.key === fromPortKey);
-  const inputDef = (toDef.inputs || []).find(input => input.key === toPortKey);
+  const outputDef = resolveNodeOutputs(fromDef, fromNode).find(out => out.key === fromPortKey);
+  const inputDef = resolveNodeInputs(toDef, toNode).find(input => input.key === toPortKey);
   if (!outputDef || !inputDef) {
     return;
   }
@@ -5277,22 +6484,30 @@ function getDefaultNodePosition() {
   };
 }
 
-function formatInputAccessor(def, inputMeta) {
+function formatInputAccessor(def, inputMeta, node) {
   if (!def || !inputMeta) {
     return "0";
   }
   if (inputMeta.accessorType === "index") {
     return inputMeta.cppAccessor ?? "0";
   }
-  return `${def.cppType}::${inputMeta.cppAccessor}`;
+  const cppType = resolveCppType(def, node);
+  if (!cppType) {
+    return inputMeta.cppAccessor ?? "0";
+  }
+  return `${cppType}::${inputMeta.cppAccessor}`;
 }
 
-function formatOutputAccessor(def, outputMeta) {
+function formatOutputAccessor(def, outputMeta, node) {
   if (!def || !outputMeta) {
     return "0";
   }
   if (outputMeta.accessorType === "enum") {
-    return `${def.cppType}::${outputMeta.cppAccessor}`;
+    const cppType = resolveCppType(def, node);
+    if (!cppType) {
+      return outputMeta.cppAccessor ?? "0";
+    }
+    return `${cppType}::${outputMeta.cppAccessor}`;
   }
   return outputMeta.cppAccessor ?? "0";
 }
@@ -5348,8 +6563,11 @@ function generateCpp() {
     variableMap.set(node.id, uniqueName);
 
     const def = getNodeDefinition(node.typeId);
+    const inputDefs = resolveNodeInputs(def, node);
+    const cppType = resolveCppType(def, node);
     const ctorValues = [];
-    (def.constructorArgs || []).forEach(arg => {
+    const constructorArgs = resolveNodeConstructorArgs(def, node);
+    constructorArgs.forEach(arg => {
       const stored = (node.constructorArgs?.[arg.key] ?? "").trim();
       const fallback = (arg.defaultValue ?? "").trim();
       const finalValue = stored || fallback;
@@ -5359,11 +6577,11 @@ function generateCpp() {
     });
     const ctorCall = ctorValues.length ? `(${ctorValues.join(", ")})` : "()";
     appendBlankLine(bodyLines);
-    bodyLines.push(`auto ${uniqueName} = graph.CreateNode<${def.cppType}>${ctorCall};`);
-    (def.inputs || []).forEach(input => {
+    bodyLines.push(`auto ${uniqueName} = graph.CreateNode<${cppType}>${ctorCall};`);
+    inputDefs.forEach(input => {
       const value = (node.inputs?.[input.key] ?? "").trim();
       if (value) {
-        const templateArg = formatInputAccessor(def, input);
+        const templateArg = formatInputAccessor(def, input, node);
         bodyLines.push(`${uniqueName}->input.SetDefaultValue<${templateArg}>(${value});`);
       }
     });
@@ -5378,7 +6596,7 @@ function generateCpp() {
       const rawValue = (node.customValues?.[setter.key] ?? "").trim();
       let formatted = rawValue;
       if (setter.formatValue) {
-        formatted = setter.formatValue(rawValue, def, setter) ?? "";
+        formatted = setter.formatValue(rawValue, def, setter, node) ?? "";
       }
       if (formatted) {
         bodyLines.push(`${uniqueName}->${setter.method}(${formatted});`);
@@ -5410,13 +6628,13 @@ function generateCpp() {
       if (!fromVar || !toVar || !fromDef || !toDef) {
         return;
       }
-      const inputMeta = (toDef.inputs || []).find(input => input.key === conn.toPort);
-      const outputMeta = (fromDef.outputs || []).find(output => output.key === conn.fromPort);
+      const inputMeta = resolveNodeInputs(toDef, toNode).find(input => input.key === conn.toPort);
+      const outputMeta = resolveNodeOutputs(fromDef, fromNode).find(output => output.key === conn.fromPort);
       if (!inputMeta || !outputMeta) {
         return;
       }
-      const inputAccessor = formatInputAccessor(toDef, inputMeta);
-      const outputAccessor = formatOutputAccessor(fromDef, outputMeta);
+      const inputAccessor = formatInputAccessor(toDef, inputMeta, toNode);
+      const outputAccessor = formatOutputAccessor(fromDef, outputMeta, fromNode);
       bodyLines.push(`${toVar}->ConnectInputTo(${inputAccessor}, ${fromVar}, ${outputAccessor});`);
     });
   }
