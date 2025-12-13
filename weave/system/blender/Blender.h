@@ -58,7 +58,7 @@ struct NodeIoNames {
 	std::vector<std::pair<std::string, size_t>> outputNames;
 };
 
-class TriggerNode : public BlenderNode<> {
+class FlowEntryNode : public BlenderNode<> {
 public:
 	void ExecuteNode() override {};
 };
@@ -67,13 +67,14 @@ class Blender {
 protected:
 	int64_t executionCounter{};
 	DynamicInterface ioInterface;
-	TriggerNode rootNode;
+	FlowInterface flowInterface;
+	FlowEntryNode rootNode;
 	std::vector<std::unique_ptr<BlenderNodeBase>> nodes;
+	bool flowGraphDirty{ true };
 	
 	NameManager nameManager;
 
 public:
-
 	template<typename NodeType, typename... Args>
 	NodeType* CreateNamedNode(std::string const& name, Args&&... args) {
 		auto node = CreateNode<NodeType>(std::forward<Args>(args)...);
@@ -100,16 +101,17 @@ public:
 
 		NodeType* nodePtr = node.get();
 		nodes.push_back(std::move(node));
+		MarkFlowGraphDirty();
 		
 		return nodePtr;
 	}
 
-	void AddRootTrigger(BlenderNodeBase* node) {
-		rootNode.ConnectTrigger(node);
+	void AddRootFlowLink(BlenderNodeBase* node) {
+		rootNode.ConnectOutflowLink(node);
 	}
 
-	void RemoveRootTrigger(BlenderNodeBase* node) {
-		rootNode.DisconnectTrigger(node);
+	void RemoveRootFlowLink(BlenderNodeBase* node) {
+		rootNode.DisconnectOutflowLink(node);
 	}
 
 	// Node names
@@ -347,9 +349,41 @@ public:
 	}
 
 	void Execute() {
+		CompileFlowGraph();
+		flowInterface.FlushFlow();
 		executionCounter++;
-		rootNode.ExecuteTriggers(executionCounter);
+		rootNode.PropagateOutflow(executionCounter);
 	}
+
+	void CompileFlowGraph() {
+		if (!flowGraphDirty) {
+			return;
+		}
+		
+		flowInterface.Reset();
+		rootNode.flowId = kInvalidFlowId;
+		for (auto& node : nodes) {
+			if (node) {
+				node->flowId = kInvalidFlowId;
+			}
+		}
+
+		rootNode.EnsureFlowCompiled(flowInterface);
+		for (auto& node : nodes) {
+			if (node) {
+				node->EnsureFlowCompiled(flowInterface);
+				node->LinkFlow(flowInterface);
+			}
+		}
+
+		flowGraphDirty = false;
+	}
+
+private:
+	void MarkFlowGraphDirty() {
+		flowGraphDirty = true;
+	}
+	
 };
 
 }

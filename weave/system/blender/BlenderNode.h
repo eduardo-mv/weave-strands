@@ -14,69 +14,77 @@
 namespace weave::blender {
 
 struct BlenderNodeBase {
+	friend class Blender;
 protected:
 	int64_t executionStamp{};
-	int32_t triggerCounter{};
-	int32_t triggerCountTarget{}; //Amount of times the node needs to be triggered to allow execution as a trigger. Increased every time a node is connected to another node's trigger
-	std::vector<BlenderNodeBase*> triggers;
+	std::vector<BlenderNodeBase*> outflowLinks;
+	std::vector<BlenderNodeBase*> inflowLinks;
+
+	FlowId flowId{ kInvalidFlowId };
 
 public:
-	void Execute(int64_t executionCounter) {
+	void Execute(int64_t executionCounter, FlowId incomingFlow) {
 		if (executionStamp != executionCounter) {
-			executionStamp = executionCounter;
-			ExecuteNode();
-			ExecuteTriggers(executionCounter);
+			if(FlowArrival(incomingFlow)) {
+				executionStamp = executionCounter;
+				ExecuteNode();
+				PropagateOutflow(executionCounter);
+			}
 		}
 	}
 
-	void ExecuteTriggers(int64_t executionCounter) {
+	void PropagateOutflow(int64_t executionCounter) {
 		size_t index = 0;
-		for (auto* trigger : triggers) {
-			if (trigger) {
-				trigger->triggerCounter++;
-				if(trigger->triggerCounter >= trigger->triggerCountTarget) {
-					trigger->triggerCounter = 0;
-					if(TriggerFired(index)) {
-						trigger->Execute(executionCounter);
-					}
-				}
+		for (auto* link : outflowLinks) {
+			if (link && FlowDeparture(index)) {
+				link->Execute(executionCounter, flowId);
 			}
 			index++;
 		}
 	}
 
-	void ConnectTrigger(BlenderNodeBase* trigger) {
-		if (trigger) {
-			if (std::find(triggers.begin(), triggers.end(), trigger) == triggers.end()) {
-				trigger->triggerCountTarget++;
-				triggers.push_back(trigger);
+	virtual bool FlowArrival(FlowId ncomingFlow) = 0;
+	virtual bool FlowDeparture(size_t outflowIndex) = 0;
+
+	void ConnectOutflowLink(BlenderNodeBase* link) {
+		if (link) {
+			if (std::find(outflowLinks.begin(), outflowLinks.end(), link) == outflowLinks.end()) {
+				link->RegisterInflowLink(this);
+				outflowLinks.push_back(link);
 			}
 		}
 	}
 
-	void DisconnectTrigger(BlenderNodeBase* trigger) {
-		triggers.erase(std::remove(triggers.begin(), triggers.end(), trigger), triggers.end());
+	void DisconnectOutflowLink(BlenderNodeBase* link) {
+		if (link) {
+			link->UnregisterInflowLink(this);
+		}
+		outflowLinks.erase(std::remove(outflowLinks.begin(), outflowLinks.end(), link), outflowLinks.end());
 	}
 
-	void DisconnectTriggers() {
-		triggers.clear();
+	void DisconnectOutflowLinks() {
+		for (auto* link : outflowLinks) {
+			if (link) {
+				link->UnregisterInflowLink(this);
+			}
+		}
+		outflowLinks.clear();
 	}
 
 	void DisableCache() {
 		executionStamp = 0;
 	}
 
-	virtual ~BlenderNodeBase() {}
+	virtual ~BlenderNodeBase() = default;
 
 	virtual void ExecuteNode() = 0;
-
-	virtual bool TriggerFired([[maybe_unused]] size_t index) { return true; }
 
 	virtual void ConnectInputTo(size_t inputNum, BlenderNodeBase* n, size_t nodeOutput) = 0;
 	virtual void ConnectInputTo(size_t inputNum, std::pair<std::type_index, std::shared_ptr<void>> typedPtr) = 0;
 	virtual void DisconnectInput(size_t inputNum) = 0;
 	
 	virtual void LinkUniforms(DynamicInterface& uniformInterface) = 0;
+	virtual void LinkFlow(FlowInterface& flowInterface) = 0;
 
 	virtual std::pair<std::type_index, std::shared_ptr<void>> GetSharedPtrOutput(size_t nodeOutput) = 0;
 
@@ -87,6 +95,86 @@ public:
 	virtual std::type_index GetOutputType(size_t outputNum) const = 0;
 	virtual std::vector<std::type_index> GetInputTypes() const = 0;
 	virtual std::vector<std::type_index> GetOutputTypes() const = 0;
+
+protected:
+	void RegisterInflowLink(BlenderNodeBase* parentLink) {
+		if (parentLink) {
+			if (std::find(inflowLinks.begin(), inflowLinks.end(), parentLink) == inflowLinks.end()) {
+				inflowLinks.push_back(parentLink);
+			}
+		}
+	}
+
+	void UnregisterInflowLink(BlenderNodeBase* parentLink) {
+		if (!parentLink) {
+			return;
+		}
+		inflowLinks.erase(std::remove(inflowLinks.begin(), inflowLinks.end(), parentLink), inflowLinks.end());
+	}
+
+	void ClearInflowLinks() {
+		inflowLinks.clear();
+	}
+
+	bool HasInflowLinks() const {
+		return std::any_of(inflowLinks.begin(), inflowLinks.end(), [](auto* parent) { return parent != nullptr; });
+	}
+
+	bool HasOutflowLinks() const {
+		return std::any_of(outflowLinks.begin(), outflowLinks.end(), [](auto* child) { return child != nullptr; });
+	}
+
+	size_t CountActiveOutflows() const {
+		return std::count_if(outflowLinks.begin(), outflowLinks.end(), [](auto* child) { return child != nullptr; });
+	}
+
+	FlowId EnsureFlowCompiled(FlowInterface& flowInterface) {
+		if (flowId != kInvalidFlowId) {
+			return flowId; // FlowId already set
+		}
+
+		const bool hasInflows = HasInflowLinks();
+		const bool hasOutflows = HasOutflowLinks();
+
+		if (!hasInflows && !hasOutflows) {
+			return flowId; // No in or out flow, there's no flow on this node so it returns invalid
+		}
+
+		if (!hasInflows) {
+			flowId = flowInterface.CreateFlowId();
+			auto& block = flowInterface.GetBlock(flowId);
+			block.ancestry.clear();
+			return flowId; // No parent inflows, but has outflows, so a new flowid is created
+		}
+
+
+		if (inflowLinks.size() == 1) {
+			auto* parentNode = inflowLinks.front();
+			const bool parentBranches = parentNode && parentNode->CountActiveOutflows() > 1;
+			if (!parentBranches) {
+				flowId = parentNode->EnsureFlowCompiled(flowInterface);
+				return flowId; // Node has a single parent that isn't branching, so the parent flowid is directly inherited
+			}
+		}
+		
+		// Node has multiple parents or a single parent that is branching, so a new flowid is needed alongside the ancestry
+		std::vector<FlowId> parentIds;
+		parentIds.reserve(inflowLinks.size());
+		for (auto* parent : inflowLinks) {
+			if (!parent) {
+				continue;
+			}
+			auto parentFlowId = parent->EnsureFlowCompiled(flowInterface);
+			if (parentFlowId != kInvalidFlowId) {
+				parentIds.emplace_back(parentFlowId);
+			}
+		}
+
+		flowId = flowInterface.CreateFlowId();
+		flowInterface.MergeAncestry(flowId, parentIds);
+
+		return flowId;
+	}
 };
 
 template<typename ...InOutUniformBaseTypes>
@@ -94,7 +182,10 @@ struct BlenderNode : weave::first_base_of_t<BlenderNodeBase, InOutUniformBaseTyp
 	using InType = weave::first_specialization_of_t<In, InOutUniformBaseTypes...>;
 	using OutType = weave::first_specialization_of_t<Out, InOutUniformBaseTypes...>;
 	using UniformType = weave::first_specialization_of_t<Uniform, InOutUniformBaseTypes...>;
+	using FlowType = weave::first_specialization_of_t<Flow, InOutUniformBaseTypes...>;
 	using BaseType = weave::first_base_of_t<BlenderNodeBase, InOutUniformBaseTypes...>;
+	using BlenderNodeBase::flowId;
+	using BlenderNodeBase::inflowLinks;
 
 	static_assert(std::is_base_of_v<BlenderNodeBase, BaseType>, "Base class must derive from BlenderNodeBase.");
 
@@ -107,6 +198,7 @@ struct BlenderNode : weave::first_base_of_t<BlenderNodeBase, InOutUniformBaseTyp
 	InType input{ BaseType::executionStamp };
 	OutType output{};
 	UniformType uniform;
+	FlowType flow; 
 
 	
 	BlenderNode() = default;
@@ -115,6 +207,21 @@ struct BlenderNode : weave::first_base_of_t<BlenderNodeBase, InOutUniformBaseTyp
 	BlenderNode& operator=(BlenderNode const& other) = default;
 	BlenderNode& operator=(BlenderNode&& other) noexcept = default;
 	
+
+	bool FlowArrival(FlowId incomingFlow) override {
+		flow.inflowStage.emplace_back(incomingFlow);
+		if(flow.inflowStage.size() >= inflowLinks.size()) {
+			flow.inflowStage.clear();
+			return true;
+		}
+
+		return false;
+	}
+
+	bool FlowDeparture([[maybe_unused]] size_t outflowIndex) override {
+		return true;
+	}
+
 	template<size_t inputNum, size_t nodeOutput, typename OutType>
 	void ConnectInputTo(OutType&& out) {
 		ConnectInputTo(inputNum, std::forward<OutType>(out), nodeOutput);
@@ -192,6 +299,10 @@ struct BlenderNode : weave::first_base_of_t<BlenderNodeBase, InOutUniformBaseTyp
 
 	void LinkUniforms(DynamicInterface& uniformInterface) override {
 		uniform.LinkUniforms(uniformInterface);
+	}
+
+	void LinkFlow(FlowInterface& flowInterface) override {
+		flow.LinkFlow(flowId, flowInterface);
 	}
 
 };

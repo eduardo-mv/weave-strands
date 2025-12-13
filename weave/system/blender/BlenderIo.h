@@ -5,14 +5,335 @@
 #include <typeindex>
 #include <type_traits>
 #include <unordered_map>
+#include <unordered_set>
 #include <memory>
 #include <vector>
 #include <utility>
+#include <limits>
+#include <cstddef>
+#include <cassert>
+#include <span>
+#include <iterator>
+#include <functional>
 #include "TupleTraits.h"
+
 
 namespace weave::blender {
 
 struct BlenderNodeBase;
+	
+using FlowId = uint32_t;
+inline constexpr FlowId kInvalidFlowId = std::numeric_limits<FlowId>::max();
+
+class FlowInterface {
+public:
+	struct FlowDataContainer {
+		std::type_index typeId;
+		std::vector<std::byte> data;
+		size_t fence{};
+		std::function<void(void*, size_t)> destructor;
+		
+		~FlowDataContainer() {
+			clear();
+		}
+
+		void clear() {
+			destructor(data.data(), data.size());
+			data.clear();
+			fence = 0;
+		}
+
+		template<typename T>
+		void push_back(T&& value) {
+			using ValueType = std::decay_t<T>;
+			assert(typeId == typeid(ValueType));
+			
+			auto const offset = data.size();
+			data.resize(offset + sizeof(T));
+			void* ptr = data.data() + offset;
+			::new(ptr) ValueType(std::forward<T>(value));
+		}
+
+		void flush() {
+			fence = data.size();
+		}
+
+		template<typename T>
+		auto make_span() {
+			assert(typeId == typeid(T));
+			assert(fence <= data.size());
+			return std::span<T>{ reinterpret_cast<T*>(data.data() + fence), (data.size() - fence) / sizeof(T) };
+		}
+
+		bool is_fenced() const {
+			return fence > 0;
+		}
+	};
+
+	struct FlowBlock {
+		FlowId id{ kInvalidFlowId };
+		std::unordered_map<std::type_index, std::unique_ptr<FlowDataContainer>> dataTypeMap; // Type-erased storage and memory offsets describing the "start" of the storage buffer, acting as a fence to virtually remove data from a flow
+		std::vector<FlowId> ancestry;
+
+		template<typename ...Types>
+		void PrepareData() {
+			(MakeData<Types>(), ...);
+		}
+
+		template<typename T>
+		FlowDataContainer& GetContainer() {
+			PrepareData<T>();
+			std::type_index typeIndex = typeid(T);
+			return *dataTypeMap[typeIndex].get();
+		}
+
+		template<typename T>
+		FlowDataContainer* TryContainer() {
+			std::type_index typeIndex = typeid(T);
+			
+			if (auto it = dataTypeMap.find(typeIndex); it != dataTypeMap.end()) {
+				return it->second.get();
+
+			}
+			return nullptr;
+		}
+
+	private:
+		template<typename T>
+		void MakeData() {
+			 const auto key = std::type_index(typeid(T));
+			if (dataTypeMap.find(key) != dataTypeMap.end()) {
+				return;
+			}
+
+			auto container = 
+			std::make_unique<FlowDataContainer>(
+				key,
+				std::vector<std::byte>{},
+				size_t{0},
+				[](void* mem, size_t bytes) {
+					auto* items = static_cast<T*>(mem);
+					size_t count = bytes / sizeof(T);
+					for (size_t i = 0; i < count; ++i) {
+						items[i].~T();
+					}
+				}
+			);
+
+			dataTypeMap.emplace(key, std::move(container));
+		}
+
+	};
+
+	FlowInterface() = default;
+
+	void Reset() {
+		flowBlockStorage.clear();
+		flowIdCounter = 0;
+	}
+
+	FlowId CreateFlowId() {
+		return ++flowIdCounter;
+	}
+
+	FlowBlock& GetBlock(FlowId id) {
+		auto& block = flowBlockStorage[id];
+		if(!block) {
+			block = std::make_unique<FlowBlock>();
+			block->id = id;
+		}
+		
+		return *block;
+	}
+
+	FlowBlock* TryBlock(FlowId id) {
+		if (auto it = flowBlockStorage.find(id); it != flowBlockStorage.end()) {
+			return it->second.get();
+		}
+		return nullptr;
+	}
+
+	FlowBlock const* TryBlock(FlowId id) const {
+		if (auto it = flowBlockStorage.find(id); it != flowBlockStorage.end()) {
+			return it->second.get();
+		}
+		return nullptr;
+	}
+
+	void MergeAncestry(FlowId targetId, std::vector<FlowId> const& parentFlows) {
+		auto& block = GetBlock(targetId);
+		block.ancestry.clear();
+
+		std::unordered_set<FlowId> uniqueIds;
+		for (auto parentId : parentFlows) {
+			if (parentId == kInvalidFlowId) {
+				continue;
+			}
+
+			if (uniqueIds.insert(parentId).second) {
+				block.ancestry.push_back(parentId);
+			}
+
+			if (auto const* parentBlock = TryBlock(parentId)) {
+				for (auto ancestorId : parentBlock->ancestry) {
+					if (uniqueIds.insert(ancestorId).second) {
+						block.ancestry.push_back(ancestorId);
+					}
+				}
+			}
+		}
+	}
+
+	void FlushFlow() {
+		for (auto& [id, blockPtr] : flowBlockStorage) {
+			(void)id;
+			if (!blockPtr) {
+				continue;
+			}
+			for (auto& [type, container] : blockPtr->dataTypeMap) {
+				container->clear();
+			}
+		}
+	}
+
+private:
+	std::unordered_map<FlowId, std::unique_ptr<FlowBlock>> flowBlockStorage;
+	FlowId flowIdCounter { 0 };
+};
+
+template<typename T>
+struct FlowContainerView {
+	using FlowDataContainer = FlowInterface::FlowDataContainer;
+	std::vector<FlowDataContainer*> ancestry;
+
+	void push_back(T const& value) {
+		assert(!ancestry.empty());
+		ancestry.front()->push_back(value);
+	}
+
+	void flush() {
+		assert(!ancestry.empty());
+		ancestry.front()->flush();
+	}
+
+	static FlowContainerView Make(FlowId flowId, FlowInterface &flowInterface) {
+		auto& block = flowInterface.GetBlock(flowId);
+		auto& container = block.GetContainer<T>();
+		
+		FlowContainerView fcv;
+		fcv.ancestry.clear();
+		fcv.ancestry.push_back(&container);
+
+		for (auto it = block.ancestry.rbegin(); it != block.ancestry.rend(); ++it) {
+			auto& ancestorBlock = flowInterface.GetBlock(*it);
+			if (auto ancestorContainer = ancestorBlock.TryContainer<T>()) {
+				fcv.ancestry.push_back(ancestorContainer);
+			}
+		}
+
+		return fcv;
+	}
+
+	struct Range {
+		struct iterator {
+			using iterator_category = std::input_iterator_tag;
+			using value_type = T;
+			using difference_type = std::ptrdiff_t;
+			using pointer = T*;
+			using reference = T&;
+
+			std::vector<FlowDataContainer*>* ancestors{};
+			size_t ancestorIndex{};
+			std::span<T> data{};
+			size_t dataIndex{};
+			bool isFenced{};
+			
+			iterator() = default;
+
+			explicit iterator(std::vector<FlowDataContainer*>* view)
+				: ancestors(view)
+			{
+				SetupForAncestor(0);
+			}
+
+			reference operator*() const {
+				return data[dataIndex - 1];
+			}
+
+			pointer operator->() const {
+				return &(**this);
+			}
+
+			iterator& operator++() {
+				Advance();
+				return *this;
+			}
+
+			iterator operator++(int) {
+				auto tmp = *this;
+				Advance();
+				return tmp;
+			}
+
+			bool operator==(iterator const& other) const {
+				if (!ancestors && !other.ancestors) {
+					return true;
+				}
+				return ancestors == other.ancestors &&
+					ancestorIndex == other.ancestorIndex &&
+					dataIndex == other.dataIndex;
+			}
+
+			bool operator!=(iterator const& other) const {
+				return !(*this == other);
+			}
+
+		private:
+			void SetupForAncestor(size_t index) {
+				if(!ancestors)
+					return;
+				
+				if(isFenced || index >= ancestors->size()){
+					ancestors = nullptr;
+					return;
+				}
+
+				ancestorIndex = index;
+
+				auto& container = *(*ancestors)[ancestorIndex];
+				isFenced = container.is_fenced();
+				data = container.make_span<T>();
+				dataIndex = data.size();
+				
+				while (dataIndex == 0 && ancestors) {
+					SetupForAncestor(ancestorIndex + 1);
+				}
+			}
+
+			void Advance() {
+				if (!ancestors) {
+					return;
+				}
+				if (dataIndex > 0) {
+					--dataIndex;
+				}
+				if(dataIndex == 0) {
+					SetupForAncestor(ancestorIndex + 1);
+				}
+			}
+		};
+
+		FlowContainerView& view{};
+
+		iterator begin() {
+			return iterator(&view.ancestry);
+		}
+
+		iterator end() {
+			return iterator(nullptr);
+		}
+	};
+};
 
 class DynamicInterface {
 private:
@@ -149,7 +470,7 @@ private:
 	template<typename T>
 	auto const& CachedInput(T& input) {
 		if (input.nodeLink) {
-			input.nodeLink->Execute(executionStamp);
+			input.nodeLink->Execute(executionStamp, 0);
 		}
 
 		return *input.data;
@@ -549,5 +870,65 @@ public:
 		}
 	}
 };
+
+
+template<typename ...Types>
+struct Flow {
+	using ValueTuple = std::tuple<Types...>;
+
+private:
+	std::tuple<FlowContainerView<Types>...> flowTuple{};
+
+public:
+	std::vector<uint32_t> inflowStage{};
+
+public:
+
+	template<typename Tuple>
+	Flow(Tuple&& tuple) : flowTuple(std::forward<Tuple>(tuple)) {}
+
+	Flow() = default;
+	Flow(Flow const& other) = default;
+	Flow(Flow&& other) noexcept = default;
+	Flow& operator=(Flow const& other) = default;
+	Flow& operator=(Flow&& other) noexcept = default;
+
+	template<typename T>
+	void Push(T&& value) {
+		using ValueType = std::decay_t<T>;
+		std::get<FlowContainerView<ValueType>>(flowTuple).push_back(std::forward<T>(value));
+	}
+
+	template<typename T>
+	void Flush() {
+		using ValueType = std::decay_t<T>;
+		std::get<FlowContainerView<ValueType>>(flowTuple).flush();
+	}
+
+	template<typename T>
+	auto Iterate() {
+		using ValueType = std::decay_t<T>;
+		return typename FlowContainerView<ValueType>::Range{ std::get<FlowContainerView<ValueType>>(flowTuple) };
+	}
+
+	void LinkFlow(FlowId flowId, FlowInterface &flowInterface) {
+		auto& block = flowInterface.GetBlock(flowId);
+		block.PrepareData<Types...>();
+		LinkFlowTuple(flowId, flowInterface);
+	}
+
+private:
+	template<size_t N = 0>
+	void LinkFlowTuple(FlowId flowId, FlowInterface &flowInterface) {
+		if constexpr (N < sizeof...(Types)) {
+			using T = std::tuple_element_t<N, ValueTuple>;
+			auto& tupleElem = std::get<N>(flowTuple);
+			tupleElem = FlowContainerView<T>::Make(flowId, flowInterface);
+
+			LinkFlowTuple<N + 1>(flowId, flowInterface);
+		}
+	}
+};
+
 
 }
