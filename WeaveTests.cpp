@@ -51,6 +51,8 @@
 #include "weave/particles/core/nodes/ParticleRngVelocityInit.h"
 #include "weave/particles/core/nodes/ParticleSphereInit.h"
 #include "weave/particles/core/nodes/ParticleTransformInit.h"
+#include "weave/particles/core/nodes/ParticleBufferInjector.h"
+
 
 #include "weave/system/blender/Blender.h"
 #include "weave/system/blender/nodes/ArithmeticNodes.h"
@@ -185,8 +187,8 @@ void MakeTestBlenderGraph(weave::blender::Blender& graph) {
     using namespace weave;
 
     auto emitter = graph.CreateNode<wp::ParticleEmitter>();
-    emitter->input.SetDefaultValue<wp::ParticleEmitter::MinEmit>(10.0f);
-    emitter->input.SetDefaultValue<wp::ParticleEmitter::MaxEmit>(100.0f);
+    emitter->input.SetDefaultValue<wp::ParticleEmitter::MinEmitHz>(10.0f);
+    emitter->input.SetDefaultValue<wp::ParticleEmitter::MaxEmitHz>(100.0f);
     emitter->input.SetDefaultValue<wp::ParticleEmitter::Rate>(1000.0f);
     emitter->input.SetDefaultValue<wp::ParticleEmitter::MinFrequency>(3.0f);
     emitter->input.SetDefaultValue<wp::ParticleEmitter::MaxFrequency>(5.0f);
@@ -203,8 +205,8 @@ void MakeTestBlenderGraph(weave::blender::Blender& graph) {
     boxInit->input.SetDefaultValue<wp::ParticleBoxInit::MaxZ>(0.5f);
 
     auto emitter1 = graph.CreateNode<wp::ParticleEmitter>();
-    emitter1->input.SetDefaultValue<wp::ParticleEmitter::MinEmit>(10.0f);
-    emitter1->input.SetDefaultValue<wp::ParticleEmitter::MaxEmit>(100.0f);
+    emitter1->input.SetDefaultValue<wp::ParticleEmitter::MinEmitHz>(10.0f);
+    emitter1->input.SetDefaultValue<wp::ParticleEmitter::MaxEmitHz>(100.0f);
     emitter1->input.SetDefaultValue<wp::ParticleEmitter::Rate>(1.0f);
     emitter1->input.SetDefaultValue<wp::ParticleEmitter::MinFrequency>(0.0f);
     emitter1->input.SetDefaultValue<wp::ParticleEmitter::MaxFrequency>(0.0f);
@@ -267,12 +269,16 @@ void MakeTestBlenderGraph(weave::blender::Blender& graph) {
 
     auto constTransform1 = graph.CreateNode<wb::ConstNode<weave::Transform>>(Transform(Vector3{1.0f, 0.0f, 0.0f}, Vector3{1.0f, 1.0f, 1.0f}, Quaternion(Vector3{0.0f, 0.0f, 0.0f})));
 
-    graph.AddRootFlowLink(emitter);
-    graph.AddRootFlowLink(emitter1);
-
+    auto bufferInjector = graph.CreateNode<wp::ParticleBufferInjector>();
+    
     // Data connections
     transformInit1->ConnectInputTo(wp::ParticleTransformInit::TransformInput, constTransform1, 0);
     transformInit->ConnectInputTo(wp::ParticleTransformInit::TransformInput, constTransform, 0);
+
+    // Flow links
+    graph.AddRootFlowLink(bufferInjector);
+    bufferInjector->ConnectOutflowLink(emitter);
+    bufferInjector->ConnectOutflowLink(emitter1);
 
     emitter->ConnectOutflowLink(boxInit);
     emitter1->ConnectOutflowLink(sphere);
@@ -797,11 +803,11 @@ void main() {
 
     MakeTestBlenderGraph(particleMachine.Graph());
     auto emitterNode = particleMachine.Graph().CreateNode<wp::ParticleEmitter>();
-    emitterNode->input.SetDefaultValue<wp::ParticleEmitter::MinEmit>(1.0f);
-    emitterNode->input.SetDefaultValue<wp::ParticleEmitter::MaxEmit>(5.0f);
+    emitterNode->input.SetDefaultValue<wp::ParticleEmitter::MinEmitHz>(10.0f);
+    emitterNode->input.SetDefaultValue<wp::ParticleEmitter::MaxEmitHz>(100.0f);
     emitterNode->input.SetDefaultValue<wp::ParticleEmitter::Rate>(4.0f);
     emitterNode->input.SetDefaultValue<wp::ParticleEmitter::MinFrequency>(0.0f);
-    emitterNode->input.SetDefaultValue<wp::ParticleEmitter::MaxFrequency>(0.02f);
+    emitterNode->input.SetDefaultValue<wp::ParticleEmitter::MaxFrequency>(0.0f);
     emitterNode->input.SetDefaultValue<wp::ParticleEmitter::MaxRuntime>(-1.0);
     emitterNode->input.SetDefaultValue<wp::ParticleEmitter::MaxParticles>(kMaxDemoParticles);
 
@@ -810,7 +816,7 @@ void main() {
 
     auto sphereInitNode = particleMachine.Graph().CreateNode<wp::ParticleSphereInit>();
     sphereInitNode->input.SetDefaultValue<wp::ParticleSphereInit::MinRadius>(0.0f);
-    sphereInitNode->input.SetDefaultValue<wp::ParticleSphereInit::MaxRadius>(0.15f);
+    sphereInitNode->input.SetDefaultValue<wp::ParticleSphereInit::MaxRadius>(0.0f);
     sphereInitNode->input.SetDefaultValue<wp::ParticleSphereInit::Alpha>(weave::algebra::F_2PI);
     sphereInitNode->input.SetDefaultValue<wp::ParticleSphereInit::Beta>(weave::algebra::F_2PI);
     sphereInitNode->SetAlphaHemisphere(true);
@@ -837,16 +843,21 @@ void main() {
 
     auto physicsSimNode = particleMachine.Graph().CreateNode<wp::ParticlePhysicsSim>();
     physicsSimNode->input.SetDefaultValue<wp::ParticlePhysicsSim::LinearDamping>(0.985f);
-    physicsSimNode->input.SetDefaultValue<wp::ParticlePhysicsSim::Gravity>(Vector3{0.0f, 1.5f, 0.0f});
+    physicsSimNode->input.SetDefaultValue<wp::ParticlePhysicsSim::Gravity>(Vector3{0.0f, -1.5f, 0.0f});
 
-    particleMachine.Graph().AddRootFlowLink(emitterNode);
+    auto bufferInjector = particleMachine.Graph().CreateNode<wp::ParticleBufferInjector>();
+
+    particleMachine.Graph().AddRootFlowLink(bufferInjector);
+
+    bufferInjector->ConnectOutflowLink(emitterNode);
     emitterNode->ConnectOutflowLink(sphereInitNode);
     sphereInitNode->ConnectOutflowLink(velocityInitNode);
     velocityInitNode->ConnectOutflowLink(physicsInitNode);
     physicsInitNode->ConnectOutflowLink(transformInitNode);
     transformInitNode->ConnectOutflowLink(commitNode);
 
-    particleMachine.Graph().AddRootFlowLink(agingNode);
+    bufferInjector->ConnectOutflowLink(agingNode);
+    //commitNode->ConnectOutflowLink(agingNode);
     agingNode->ConnectOutflowLink(physicsSimNode);
 
     std::shared_ptr<Transform> emitterTransform;

@@ -8,7 +8,8 @@ namespace weave::particles {
 
 class ParticleLifeAdjustSim : public ParticleNode<
 	blender::In<Transform, float, float, float, bool, bool, bool>,
-	blender::Out<>> {
+	blender::Out<>,
+	blender::Flow<ParticleBuffer*>> {
 public:
 	ParticleLifeAdjustSim();
 
@@ -25,8 +26,8 @@ public:
 	};
 
 private:
-	void AdjustAllParticles(float minInput, float maxInput, bool relativeMin, bool relativeMax, bool clampUpper);
-	void AdjustParticlesInRadius(float radiusSq,
+	void AdjustAllParticles(ParticleBuffer* buffer, float minInput, float maxInput, bool relativeMin, bool relativeMax, bool clampUpper);
+	void AdjustParticlesInRadius(ParticleBuffer* buffer, float radiusSq,
 		float minInput, float maxInput, bool relativeMin, bool relativeMax, bool clampUpper);
 
 };

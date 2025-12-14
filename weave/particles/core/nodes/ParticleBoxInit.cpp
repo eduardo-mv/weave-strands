@@ -56,51 +56,43 @@ void ParticleBoxInit::ExecuteNode() {
 	const float diffY = std::max(0.0f, normMaxY - normMinY);
 	const float diffZ = std::max(0.0f, normMaxZ - normMinZ);
 
-	auto emissionRange = context.GetCurrentEmissionRange(triggerCountTarget);
-	if (!emissionRange) {
-		return;
-	}
-
-	auto const& layout = emissionRange.GetLayout();
-	const size_t particleSize = layout.particleByteSize;
-	if (particleSize == 0) {
-		return;
-	}
-
-	const auto layoutPositionOffset = layout.GetOffsets<layout::Position>();
-	if (ParticleLayout::HasInvalidOffsets(layoutPositionOffset)) {
-		return;
-	}
-
-	if (layoutPositionOffset[0] + sizeof(Vector3) > particleSize) {
-		return;
-	}
-
-	for (auto&& [position] : emissionRange.EmissionSpan<layout::Position>(layoutPositionOffset)) {
-		Vector3& pos = position.pos;
-		switch (faceOut) {
-		case 0: {
-			pos.x = FaceCoordinate(normMinX, diffX);
-			pos.y = RandomSigned(normMaxY);
-			pos.z = RandomSigned(normMaxZ);
-			break;
-		}
-		case 1: {
-			pos.x = RandomSigned(normMaxX);
-			pos.y = FaceCoordinate(normMinY, diffY);
-			pos.z = RandomSigned(normMaxZ);
-			break;
-		}
-		case 2:
-		default: {
-			pos.x = RandomSigned(normMaxX);
-			pos.y = RandomSigned(normMaxY);
-			pos.z = FaceCoordinate(normMinZ, diffZ);
-			break;
-		}
+	for (auto const& emissionRange : flow.Iterate<EmissionRange>()) {
+		if (!emissionRange) {
+			continue;
 		}
 
-		faceOut = (faceOut + 1) % 3;
+		auto const& layout = emissionRange.GetLayout();
+		const auto layoutPositionOffset = layout.GetOffsets<layout::Position>();
+		if (ParticleLayout::HasInvalidOffsets(layoutPositionOffset)) {
+			return;
+		}
+
+		for (auto&& [position] : emissionRange.EmissionSpan<layout::Position>(layoutPositionOffset)) {
+			Vector3& pos = position.pos;
+			switch (faceOut) {
+			case 0: {
+				pos.x = FaceCoordinate(normMinX, diffX);
+				pos.y = RandomSigned(normMaxY);
+				pos.z = RandomSigned(normMaxZ);
+				break;
+			}
+			case 1: {
+				pos.x = RandomSigned(normMaxX);
+				pos.y = FaceCoordinate(normMinY, diffY);
+				pos.z = RandomSigned(normMaxZ);
+				break;
+			}
+			case 2:
+			default: {
+				pos.x = RandomSigned(normMaxX);
+				pos.y = RandomSigned(normMaxY);
+				pos.z = FaceCoordinate(normMinZ, diffZ);
+				break;
+			}
+			}
+
+			faceOut = (faceOut + 1) % 3;
+		}
 	}
 }
 

@@ -6,7 +6,8 @@ namespace weave::particles {
 
 class ParticlePhysicsSim : public ParticleNode<
 	blender::In<float, Vector3>,
-	blender::Out<>> {
+	blender::Out<>,
+	blender::Flow<ParticleBuffer*>> {
 public:
 	ParticlePhysicsSim();
 

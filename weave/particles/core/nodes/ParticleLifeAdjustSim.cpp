@@ -65,21 +65,24 @@ void ParticleLifeAdjustSim::ExecuteNode() {
 	const bool clampUpper = this->input.template Ref<ClampUpperInput>();
 
 	if (radiusInput < 0.0f) {
-		AdjustAllParticles(minInput, maxInput, relativeMin, relativeMax, clampUpper);
+		for (auto* buffer : flow.Iterate<ParticleBuffer*>()) {
+			if (!buffer) {
+				continue;
+			}
+			AdjustAllParticles(buffer, minInput, maxInput, relativeMin, relativeMax, clampUpper);
+		}
 	} else {
 		const float radiusSq = radiusInput * radiusInput;
-		AdjustParticlesInRadius(radiusSq, minInput, maxInput, relativeMin, relativeMax, clampUpper);
+		for (auto* buffer : flow.Iterate<ParticleBuffer*>()) {
+			if (!buffer) {
+				continue;
+			}
+			AdjustParticlesInRadius(buffer, radiusSq, minInput, maxInput, relativeMin, relativeMax, clampUpper);
+		}
 	}
 }
 
-void ParticleLifeAdjustSim::AdjustAllParticles(float minInput, float maxInput, bool relativeMin, bool relativeMax, bool clampUpper) {
-	auto& context = GetContext();
-
-	auto* buffer = context.GetCurrentBuffer();
-	if (!buffer) {
-		return;
-	}
-
+void ParticleLifeAdjustSim::AdjustAllParticles(ParticleBuffer* buffer, float minInput, float maxInput, bool relativeMin, bool relativeMax, bool clampUpper) {
 	auto& layout = buffer->GetLayout();
 	auto offsets = layout.GetOffsets<layout::LifeTime, layout::MaxLifeTime>();
 	if (ParticleLayout::HasInvalidOffsets(offsets)) {
@@ -94,14 +97,11 @@ void ParticleLifeAdjustSim::AdjustAllParticles(float minInput, float maxInput, b
 	}
 }
 
-void ParticleLifeAdjustSim::AdjustParticlesInRadius(float radiusSq,
+void ParticleLifeAdjustSim::AdjustParticlesInRadius(ParticleBuffer* buffer, float radiusSq,
 	float minInput, float maxInput, bool relativeMin, bool relativeMax, bool clampUpper) {
 	const Transform transform = this->input.template Ref<TransformInput>();
 	const Vector3 center = transform.GetPosition();
 
-	auto& context = GetContext();
-
-	auto* buffer = context.GetCurrentBuffer();
 	if (!buffer) {
 		return;
 	}

@@ -29,23 +29,26 @@ void ParticleAgingSim::ExecuteNode() {
 	}
 	
 	const float radiusInput = this->input.template Ref<RadiusInput>();
-	if(radiusInput < 0.0f) {
-		AgeParticles(deltaTime);
+	if (radiusInput < 0.0f) {
+		for (auto* buffer : flow.Iterate<ParticleBuffer*>()) {
+			if (!buffer) {
+				continue;
+			}
+			AgeParticles(buffer, deltaTime);
+		}
 	}
 	else {
 		const float radiusSq = radiusInput * radiusInput;
-		AgeParticlesInRadius(deltaTime, radiusSq);
+		for (auto* buffer : flow.Iterate<ParticleBuffer*>()) {
+			if (!buffer) {
+				continue;
+			}
+			AgeParticlesInRadius(buffer, deltaTime, radiusSq);
+		}
 	}
 }
 
-void ParticleAgingSim::AgeParticles(float deltaTime) {
-	auto& context = GetContext();
-
-	auto* buffer = context.GetCurrentBuffer();
-	if (!buffer) {
-		return;
-	}
-
+void ParticleAgingSim::AgeParticles(ParticleBuffer* buffer, float deltaTime) {
 	auto& layout = buffer->GetLayout();
 	auto offsets = layout.GetOffsets<layout::LifeTime, layout::MaxLifeTime>();
 
@@ -73,13 +76,10 @@ void ParticleAgingSim::AgeParticles(float deltaTime) {
 	}
 }
 
-void ParticleAgingSim::AgeParticlesInRadius(float deltaTime, float radiusSq) {
+void ParticleAgingSim::AgeParticlesInRadius(ParticleBuffer* buffer, float deltaTime, float radiusSq) {
 	const Transform transform = this->input.template Ref<TransformInput>();
 	const Vector3 center = transform.GetPosition();
 	
-	auto& context = GetContext();
-
-	auto* buffer = context.GetCurrentBuffer();
 	if (!buffer) {
 		return;
 	}

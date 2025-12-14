@@ -48,7 +48,15 @@ float ParticleEmitter::RandomFrequency(float minFreq, float maxFreq) const {
 
 void ParticleEmitter::ExecuteNode() {
 	auto amount = GenerateParticles();
-	GetContext().AddEmissionParticles(amount);
+	
+	if(amount != 0) {
+		for(auto* buffer : flow.Iterate<ParticleBuffer*>()){
+			if(buffer) {
+				auto offset = buffer->AddEmissionParticles(amount);
+				flow.Push(EmissionRange {buffer, offset, amount});
+			}
+		}
+	}
 }
 
 uint64_t ParticleEmitter::GenerateParticles() {
@@ -57,8 +65,8 @@ uint64_t ParticleEmitter::GenerateParticles() {
 		return 0;
 	}
 
-	auto& minEmitInput = this->input.template Ref<MinEmit>();
-	auto& maxEmitInput = this->input.template Ref<MaxEmit>();
+	auto& minEmitInput = this->input.template Ref<MinEmitHz>();
+	auto& maxEmitInput = this->input.template Ref<MaxEmitHz>();
 	auto& rate = this->input.template Ref<Rate>();
 	auto& minFreq = this->input.template Ref<MinFrequency>();
 	auto& maxFreq = this->input.template Ref<MaxFrequency>();

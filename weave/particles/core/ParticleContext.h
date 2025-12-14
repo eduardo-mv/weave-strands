@@ -11,6 +11,28 @@
 
 namespace weave::particles {
 
+struct EmissionRange {
+	ParticleBuffer* buffer{};
+	uint64_t offsetItems{};
+	uint64_t countItems{};
+
+	operator bool() const { return buffer != nullptr; }
+
+	template<typename ...Types>
+	auto EmissionSpan() const { 
+		return buffer->EmissionSpan<Types...>(offsetItems, countItems);
+	}
+
+	template<typename ...Types>
+	auto EmissionSpan(ParticleOffsetArray<Types...> offsets) const { 
+		return buffer->EmissionSpan<Types...>(offsetItems, countItems, offsets);
+	}
+
+	auto const& GetLayout() const {
+		return buffer->GetLayout();
+	}
+};
+
 /**
  * ParticleContext acts as the shared uniform block for blender-based particle nodes.
  * It carries per-iteration sampling data along with the set of buffers the particle
@@ -24,118 +46,21 @@ struct ParticleContext {
 	};
 
 	SamplingData sampling{};
+	std::vector<std::shared_ptr<ParticleBuffer>> buffers;
 
-private:
-	struct EmissionRange {
-		ParticleBuffer* buffer{};
-		uint64_t offsetItems{};
-		uint64_t countItems{};
-
-		operator bool() const { return buffer != nullptr; }
-
-		template<typename ...Types>
-		auto EmissionSpan() { 
-			return buffer->EmissionSpan<Types...>(offsetItems, countItems);
-		}
-
-		template<typename ...Types>
-		auto EmissionSpan(ParticleOffsetArray<Types...> offsets) { 
-			return buffer->EmissionSpan<Types...>(offsetItems, countItems, offsets);
-		}
-
-		auto const& GetLayout() const {
-			return buffer->GetLayout();
-		}
-	};
-
-	struct BufferData {
-		std::shared_ptr<ParticleBuffer> buffer;
-		std::vector<uint64_t> emissionStack;
-		uint64_t totalEmitted{ 0 };
-
-		void CommitEmission() {
-			buffer->CommitEmittedParticles();
-			totalEmitted = 0;
-			emissionStack.clear();
-		}
-
-		void PushEmission(uint64_t amount) {
-			if(buffer) {
-				if(amount > 0) {
-					buffer->AddEmissionParticles(amount);
-				}
-				emissionStack.emplace_back(amount);
-				totalEmitted += amount;
-			}
-		}
-
-		EmissionRange GetEmissionRange(size_t backSteps) {
-			if(!buffer || emissionStack.empty() || backSteps == 0) {
-				return EmissionRange{ buffer.get(), 0, 0 };
-			}
-
-			backSteps = std::min(backSteps, emissionStack.size());
-			const size_t mergeStart = emissionStack.size() - backSteps;
-			uint64_t amount = 0;
-
-			for(size_t i = mergeStart; i < emissionStack.size(); ++i) {
-				amount += emissionStack[i];
-			}
-
-			emissionStack[mergeStart] = amount;
-			emissionStack.resize(mergeStart + 1);
-
-			const uint64_t startOffset = totalEmitted - amount;
-			return EmissionRange{ buffer.get(), startOffset, amount };
-		}
-	};
-
-	
-
-	std::vector<BufferData> buffers;
-	size_t currentTargetBuffer{};
 
 public:
 	void ClearBuffers() { buffers.clear(); }
 
 	void AddBuffer(std::shared_ptr<ParticleBuffer> buffer) { 
-		buffers.emplace_back(std::move(buffer), std::vector<uint64_t>{}); 
+		buffers.emplace_back(std::move(buffer)); 
 	}
 
 	void SetBuffers(std::vector<std::shared_ptr<ParticleBuffer>> newBuffers) { 
-		ClearBuffers();
-		for(auto & buffer : newBuffers) {
-			AddBuffer(std::move(buffer));
-		}
+		buffers = std::move(newBuffers);
 	}
 
 	size_t BufferCount() const { return buffers.size(); }
-	size_t GetCurrentTargetBufferIndex() const { return currentTargetBuffer; }
-	void SetCurrentTargetBufferIndex(size_t target) { currentTargetBuffer = target; }
-
-	void AddEmissionParticles(uint64_t amount) {
-		if(auto buffer = GetCurrentBufferData()) {
-			buffer->PushEmission(amount);
-		}
-	}
-
-	void CommitEmissionparticles() {
-		if(auto buffer = GetCurrentBufferData()) {
-			buffer->CommitEmission();
-		}
-	}
-
-	auto GetCurrentEmissionRange(size_t backSteps) {
-		if(auto buffer = GetCurrentBufferData()) {
-			return buffer->GetEmissionRange(backSteps);
-		}
-		return EmissionRange{};
-	}
-
-	auto* GetCurrentBuffer() { return currentTargetBuffer < buffers.size() ? buffers[currentTargetBuffer].buffer.get() : nullptr; }
-
-private:
-	BufferData* GetCurrentBufferData() { return currentTargetBuffer < buffers.size() ? &buffers[currentTargetBuffer] : nullptr; }
 };
 
 } // namespace weave::particles

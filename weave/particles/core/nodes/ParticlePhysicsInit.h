@@ -6,7 +6,8 @@ namespace weave::particles {
 
 class ParticlePhysicsInit : public ParticleNode<
 	blender::In<float, float, float, float>,
-	blender::Out<>> {
+	blender::Out<>,
+	blender::Flow<EmissionRange>> {
 public:
 	ParticlePhysicsInit();
 

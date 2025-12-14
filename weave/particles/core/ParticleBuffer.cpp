@@ -16,9 +16,11 @@ void ParticleBuffer::SetLayout(ParticleLayout newLayout) {
 	layout = std::move(newLayout);
 }
 
-void ParticleBuffer::AddEmissionParticles(uint64_t amount)
+uint64_t ParticleBuffer::AddEmissionParticles(uint64_t amount)
 {
+	uint64_t prevAmount = (memoryBuffer.size() - emissionStartOffset)/layout.particleByteSize;
 	memoryBuffer.resize(memoryBuffer.size() + amount * layout.particleByteSize);
+	return prevAmount;
 }
 
 void ParticleBuffer::KillParticles(uint64_t offsetStart, uint64_t amount)

@@ -49,42 +49,34 @@ void ParticleSphereInit::ExecuteNode() {
 	const float minAlpha = -alphaHalf * 0.5f;
 	const float minBeta = -betaHalf * 0.5f;
 
-	auto emissionRange = context.GetCurrentEmissionRange(triggerCountTarget);
-	if (!emissionRange) {
-		return;
-	}
-
-	auto const& layout = emissionRange.GetLayout();
-	const size_t particleSize = layout.particleByteSize;
-	if (particleSize == 0) {
-		return;
-	}
-
-	const auto layoutPositionOffset = layout.GetOffsets<layout::Position>();
-	if (ParticleLayout::HasInvalidOffsets(layoutPositionOffset)) {
-		return;
-	}
-
-	if (layoutPositionOffset[0] + sizeof(Vector3) > particleSize) {
-		return;
-	}
-
-	for (auto&& [position] : emissionRange.EmissionSpan<layout::Position>(layoutPositionOffset)) {
-		Vector3& pos = position.pos;
-		const float radius = RandomRadius(minRadius, maxRadius);
-		const float theta = RandomAngle(minAlpha, minAlpha + alphaHalf);
-		const float phi = RandomAngle(minBeta, minBeta + betaHalf);
-
-		const float sinTheta = std::sin(theta);
-		pos.x = radius * sinTheta * std::cos(phi);
-		pos.y = radius * sinTheta * std::sin(phi);
-		pos.z = radius * std::cos(theta);
-
-		if (alphaHemisphere) {
-			pos.x = std::abs(pos.x);
+	for (auto const& emissionRange : flow.Iterate<EmissionRange>()) {
+		if (!emissionRange) {
+			continue;
 		}
-		if (betaHemisphere) {
-			pos.y = std::abs(pos.y);
+
+		auto const& layout = emissionRange.GetLayout();
+		const auto layoutPositionOffset = layout.GetOffsets<layout::Position>();
+		if (ParticleLayout::HasInvalidOffsets(layoutPositionOffset)) {
+			return;
+		}
+
+		for (auto&& [position] : emissionRange.EmissionSpan<layout::Position>(layoutPositionOffset)) {
+			Vector3& pos = position.pos;
+			const float radius = RandomRadius(minRadius, maxRadius);
+			const float theta = RandomAngle(minAlpha, minAlpha + alphaHalf);
+			const float phi = RandomAngle(minBeta, minBeta + betaHalf);
+
+			const float sinTheta = std::sin(theta);
+			pos.x = radius * sinTheta * std::cos(phi);
+			pos.y = radius * sinTheta * std::sin(phi);
+			pos.z = radius * std::cos(theta);
+
+			if (alphaHemisphere) {
+				pos.x = std::abs(pos.x);
+			}
+			if (betaHemisphere) {
+				pos.y = std::abs(pos.y);
+			}
 		}
 	}
 }

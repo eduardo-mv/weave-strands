@@ -8,7 +8,8 @@ namespace weave::particles {
 
 class ParticleAgingSim : public ParticleNode<
 	blender::In<Transform, float, float>,
-	blender::Out<>> {
+	blender::Out<>,
+	blender::Flow<ParticleBuffer*>> {
 public:
 	ParticleAgingSim();
 
@@ -21,8 +22,8 @@ public:
 	};
 
 private:
-	void AgeParticles(float deltaTime);
-	void AgeParticlesInRadius(float deltaTime, float radiusSq);
+	void AgeParticles(ParticleBuffer* buffer, float deltaTime);
+	void AgeParticlesInRadius(ParticleBuffer* buffer, float deltaTime, float radiusSq);
 };
 
 } // namespace weave::particles

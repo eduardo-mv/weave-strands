@@ -7,7 +7,7 @@ const TRANSFORM_HEADER = "weave/system/math/Transform.h";
 const RNG_HEADER = "weave/system/blender/nodes/RngNodes.h";
 const NOISE_HEADER = "weave/system/blender/nodes/NoiseNodes.h";
 const SIGNAL_SAMPLER_HEADER = "weave/animation/blender/samplers/SignalSampler.h";
-const TRIGGER_FLOW_HEADER = "weave/system/blender/nodes/TriggerFlowNodes.h";
+const TRIGGER_FLOW_HEADER = "weave/system/blender/nodes/FlowNodes.h";
 
 const TYPE_VARIANTS = [
   { id: "float", suffix: "Float", varSuffix: "Float", label: "Float", typeGroup: "Float", typeName: "float", zero: "0.0f", one: "1.0f" },
@@ -6610,7 +6610,7 @@ function generateCpp() {
     rootConnections.forEach(conn => {
       const targetVar = variableMap.get(conn.to);
       if (targetVar) {
-        bodyLines.push(`graph.AddRootTrigger(${targetVar});`);
+        bodyLines.push(`graph.AddRootFlowLink(${targetVar});`);
       }
     });
   }
@@ -6646,7 +6646,7 @@ function generateCpp() {
       const fromVar = variableMap.get(conn.from);
       const toVar = variableMap.get(conn.to);
       if (fromVar && toVar) {
-        bodyLines.push(`${fromVar}->ConnectTrigger(${toVar});`);
+        bodyLines.push(`${fromVar}->ConnectOutflowLink(${toVar});`);
       }
     });
   }

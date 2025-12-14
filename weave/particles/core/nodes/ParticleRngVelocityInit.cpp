@@ -55,40 +55,41 @@ void ParticleRngVelocityInit::ExecuteNode() {
 	const bool radial = this->input.template Ref<Radial>();
 	const bool hasLimits = limitX || limitY || limitZ;
 
-	auto emissionRange = context.GetCurrentEmissionRange(triggerCountTarget);
-	if (!emissionRange) {
-		return;
-	}
-
-	auto& layout = emissionRange.GetLayout();
-	auto offsets = layout.GetOffsets<layout::Position, layout::Velocity>();
-	if (ParticleLayout::HasInvalidOffsets(offsets)) {
-		return;
-	}
-
-	auto emissionSpan = emissionRange.EmissionSpan<layout::Position, layout::Velocity>(offsets);
-	for (auto&& [pos, vel] : emissionSpan) {
-		Vector3 direction{};
-
-		if (radial) {
-			const float magnitude = algebra::length(pos.pos);
-			if (magnitude == 0.0f) {
-				direction = RandomDirection();
-			} else {
-				direction = pos.pos / magnitude;
-			}
-		} else {
-			direction = RandomDirection();
-			if (hasLimits) {
-				direction.x = ApplyLimit(limitX, direction.x);
-				direction.y = ApplyLimit(limitY, direction.y);
-				direction.z = ApplyLimit(limitZ, direction.z);
-				direction = algebra::normalize(direction);
-			}
+	for (auto const& emissionRange : flow.Iterate<EmissionRange>()) {
+		if (!emissionRange) {
+			continue;
 		}
 
-		const float magnitude = weave::rng::uniform<float>() * velDiff + minVel;
-		vel.vel = direction * magnitude;
+		auto& layout = emissionRange.GetLayout();
+		auto offsets = layout.GetOffsets<layout::Position, layout::Velocity>();
+		if (ParticleLayout::HasInvalidOffsets(offsets)) {
+			return;
+		}
+
+		auto emissionSpan = emissionRange.EmissionSpan<layout::Position, layout::Velocity>(offsets);
+		for (auto&& [pos, vel] : emissionSpan) {
+			Vector3 direction{};
+
+			if (radial) {
+				const float magnitude = algebra::length(pos.pos);
+				if (magnitude == 0.0f) {
+					direction = RandomDirection();
+				} else {
+					direction = pos.pos / magnitude;
+				}
+			} else {
+				direction = RandomDirection();
+				if (hasLimits) {
+					direction.x = ApplyLimit(limitX, direction.x);
+					direction.y = ApplyLimit(limitY, direction.y);
+					direction.z = ApplyLimit(limitZ, direction.z);
+					direction = algebra::normalize(direction);
+				}
+			}
+
+			const float magnitude = weave::rng::uniform<float>() * velDiff + minVel;
+			vel.vel = direction * magnitude;
+		}
 	}
 }
 

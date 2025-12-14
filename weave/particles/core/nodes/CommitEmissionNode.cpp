@@ -5,7 +5,11 @@
 namespace weave::particles {
 
 void CommitEmissionNode::ExecuteNode() {
-	GetContext().CommitEmissionparticles();
+	for(auto* buffer : flow.Iterate<ParticleBuffer*>()) {
+		buffer->CommitEmittedParticles();
+	}
+
+	flow.Flush<EmissionRange>();
 }
 
 } // namespace weave::particles

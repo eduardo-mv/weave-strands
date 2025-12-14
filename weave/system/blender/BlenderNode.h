@@ -85,6 +85,7 @@ public:
 	
 	virtual void LinkUniforms(DynamicInterface& uniformInterface) = 0;
 	virtual void LinkFlow(FlowInterface& flowInterface) = 0;
+	virtual void PrepareFlowData(FlowInterface& flowInterface) = 0;
 
 	virtual std::pair<std::type_index, std::shared_ptr<void>> GetSharedPtrOutput(size_t nodeOutput) = 0;
 
@@ -304,6 +305,11 @@ struct BlenderNode : weave::first_base_of_t<BlenderNodeBase, InOutUniformBaseTyp
 	void LinkFlow(FlowInterface& flowInterface) override {
 		flow.LinkFlow(flowId, flowInterface);
 	}
+
+	void PrepareFlowData(FlowInterface& flowInterface) override {
+		flow.PrepareFlowData(flowId, flowInterface);
+	}
+
 
 };
 

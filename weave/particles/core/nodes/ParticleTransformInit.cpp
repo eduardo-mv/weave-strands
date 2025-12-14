@@ -78,8 +78,11 @@ void ParticleTransformInit::ExecuteNode() {
 	};
 
 	if (applyEmission) {
-		auto emissionRange = context.GetCurrentEmissionRange(triggerCountTarget);
-		if (emissionRange) {
+		for (auto const& emissionRange : flow.Iterate<EmissionRange>()) {
+			if (!emissionRange) {
+				continue;
+			}
+
 			auto& layout = emissionRange.GetLayout();
 
 			if (modifyPositions) {
@@ -105,29 +108,30 @@ void ParticleTransformInit::ExecuteNode() {
 	}
 
 	if (applyEditable) {
-		auto* buffer = context.GetCurrentBuffer();
-		if (!buffer) {
-			return;
-		}
+		for (auto* buffer : flow.Iterate<ParticleBuffer*>()) {
+			if (!buffer) {
+				continue;
+			}
 
-		auto& layout = buffer->GetLayout();
+			auto& layout = buffer->GetLayout();
 
-		if (modifyPositions) {
-			const auto positionOffsets = layout.GetOffsets<layout::Position>();
-			if (!ParticleLayout::HasInvalidOffsets(positionOffsets)) {
-				auto editableSpan = buffer->EditableSpan<layout::Position>(0, positionOffsets);
-				for (auto&& [position] : editableSpan) {
-					transformPosition(position.pos);
+			if (modifyPositions) {
+				const auto positionOffsets = layout.GetOffsets<layout::Position>();
+				if (!ParticleLayout::HasInvalidOffsets(positionOffsets)) {
+					auto editableSpan = buffer->EditableSpan<layout::Position>(0, positionOffsets);
+					for (auto&& [position] : editableSpan) {
+						transformPosition(position.pos);
+					}
 				}
 			}
-		}
 
-		if (modifyVelocities) {
-			const auto velocityOffsets = layout.GetOffsets<layout::Velocity>();
-			if (!ParticleLayout::HasInvalidOffsets(velocityOffsets)) {
-				auto editableSpan = buffer->EditableSpan<layout::Velocity>(0, velocityOffsets);
-				for (auto&& [velocity] : editableSpan) {
-					transformVelocity(velocity.vel);
+			if (modifyVelocities) {
+				const auto velocityOffsets = layout.GetOffsets<layout::Velocity>();
+				if (!ParticleLayout::HasInvalidOffsets(velocityOffsets)) {
+					auto editableSpan = buffer->EditableSpan<layout::Velocity>(0, velocityOffsets);
+					for (auto&& [velocity] : editableSpan) {
+						transformVelocity(velocity.vel);
+					}
 				}
 			}
 		}

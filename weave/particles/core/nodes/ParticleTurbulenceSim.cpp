@@ -42,29 +42,27 @@ void ParticleTurbulenceSim::ExecuteNode() {
 	const float radiusInput = this->input.template Ref<RadiusInput>();
 	const float decayInput = std::max(0.0f, this->input.template Ref<DecayInput>());
 
-	ApplyTurbulence(fieldList, transform, radiusInput, decayInput);
+	for (auto* buffer : flow.Iterate<ParticleBuffer*>()) {
+		if (!buffer) {
+			continue;
+		}
+		ApplyTurbulence(fieldList, transform, radiusInput, decayInput, *buffer);
+	}
 }
 
 void ParticleTurbulenceSim::ApplyTurbulence(blender::TurbulenceFieldList const& fields, Transform const& transform,
-	float radiusInput, float decayInput) {
-	auto& context = GetContext();
-
+	float radiusInput, float decayInput, ParticleBuffer& buffer) {
 	const Vector3 center = transform.GetPosition();
 	const bool useRadius = radiusInput >= 0.0f;
 	const float scaledRadius = radiusInput * transform.GetScaling().x;
 
-	auto* buffer = context.GetCurrentBuffer();
-	if (!buffer) {
-		return;
-	}
-
-	auto& layout = buffer->GetLayout();
+	auto& layout = buffer.GetLayout();
 	auto offsets = layout.GetOffsets<layout::Position, layout::Velocity, layout::Force>();
 	if (ParticleLayout::HasInvalidOffsets(offsets)) {
 		return;
 	}
 
-	auto span = buffer->EditableSpan<layout::Position, layout::Velocity, layout::Force>(0, offsets);
+	auto span = buffer.EditableSpan<layout::Position, layout::Velocity, layout::Force>(0, offsets);
 	size_t fieldIndex = 0;
 	for (auto&& [position, velocity, force] : span) {
 		Vector3& vel = velocity.vel;

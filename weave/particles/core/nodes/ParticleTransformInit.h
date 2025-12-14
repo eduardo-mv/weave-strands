@@ -8,7 +8,8 @@ namespace weave::particles {
 
 class ParticleTransformInit : public ParticleNode<
 	blender::In<Transform, bool, bool, bool, bool, bool, bool, bool>,
-	blender::Out<>> {
+	blender::Out<>,
+	blender::Flow<EmissionRange, ParticleBuffer*>> {
 public:
 	ParticleTransformInit();
 

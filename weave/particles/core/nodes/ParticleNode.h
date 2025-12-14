@@ -10,8 +10,8 @@ namespace weave::particles {
 using ParticleUniform = blender::Uniform<ParticleContext>;
 
 // Shared base template for particle nodes.
-template<typename ...InOutTypes>
-class ParticleNode : public blender::BlenderNode<InOutTypes..., ParticleUniform> {
+template<typename ...InOuFlowtTypes>
+class ParticleNode : public blender::BlenderNode<InOuFlowtTypes..., ParticleUniform> {
 protected:
 	ParticleContext& GetContext() {
 		return this->uniform.template Ref<ParticleContext>();

@@ -8,7 +8,8 @@ namespace weave::particles {
 
 class ParticleRngVelocityInit : public ParticleNode<
 	blender::In<float, float, int32_t, int32_t, int32_t, bool>,
-	blender::Out<>> {
+	blender::Out<>,
+	blender::Flow<EmissionRange>> {
 public:
 	ParticleRngVelocityInit();
 

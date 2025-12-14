@@ -6,7 +6,8 @@ namespace weave::particles {
 
 class ParticleVelocityInit : public ParticleNode<
 	blender::In<Vector3, float, float, float, float>,
-	blender::Out<>> {
+	blender::Out<>,
+	blender::Flow<EmissionRange>> {
 public:
 	ParticleVelocityInit();
 

@@ -205,15 +205,15 @@ TestReport TestNodes() {
 		auto messageTrig2 = blender.CreateNode<MessageNode>("I'm a SomeMult & PrintFloats Trigger...");
 
 		auto root = blender.CreateNode<MessageNode>("Start of the tree!");
-		root->ConnectTrigger(someMult);
-		root->ConnectTrigger(blender.CreateNode<MessageNode>("Second node"));
+		root->ConnectOutflowLink(someMult);
+		root->ConnectOutflowLink(blender.CreateNode<MessageNode>("Second node"));
 
 		someMult->ConnectInputTo(0, constantFloat, 0);
-		someMult->ConnectTrigger(message);
-		someMult->ConnectTrigger(messageTrig2);
-		someMult->ConnectTrigger(someNode);
-		someMult->ConnectTrigger(printFloats);
-		printFloats->ConnectTrigger(messageTrig2);
+		someMult->ConnectOutflowLink(message);
+		someMult->ConnectOutflowLink(messageTrig2);
+		someMult->ConnectOutflowLink(someNode);
+		someMult->ConnectOutflowLink(printFloats);
+		printFloats->ConnectOutflowLink(messageTrig2);
 
 		someNode->ConnectInputTo(0, constantFloat, 0);
 		someNode->ConnectInputTo(0, constantFloat, 1);
@@ -242,7 +242,7 @@ TestReport TestNodes() {
 
 		auto outptr = blender.ExposeOutput<0>(someMult, "X");
 
-		blender.AddRootTrigger(root);
+		blender.AddRootFlowLink(root);
 		blender.Execute();
 
 		std::cout << std::format("\nOutPtr says: {}", *outptr);
@@ -285,7 +285,7 @@ TestReport TestNodes() {
 		blender.Connect({ "multiplyNode", "product", "subtractNode", "a" });
 		blender.Connect({ "const1", "value", "subtractNode", "b" });
 
-		blender.AddRootTrigger(subtractNode);
+		blender.AddRootFlowLink(subtractNode);
 		blender.Execute();
 
 		const float result = subtractNode->output.Ref<0>();
@@ -311,11 +311,11 @@ TestReport TestNodes() {
 		time->totalSeconds = 0.0;
 		time->deltaSeconds = 1.0f / 24.0f;
 
-		blender.AddRootTrigger(sampler);
+		blender.AddRootFlowLink(sampler);
 
 		auto scaleControl = std::make_shared<float>(2.0f);
 		sampler->ConnectInputTo<0>(scaleControl);
-		sampler->ConnectTrigger(add);
+		sampler->ConnectOutflowLink(add);
 
 		auto sineWave1 = blender.CreateNode<SineWaveNode>(1.0f, 0.5f);
 		auto sineWave2 = blender.CreateNode<SineWaveNode>(0.25f, 1.0f);
@@ -324,11 +324,11 @@ TestReport TestNodes() {
 		smoothstep->ConnectInputTo<0, 0>(sineWave1);
 		smoothstep->ConnectInputTo<1, 0>(sineWave2);
 		smoothstep->ConnectInputTo<2, 0>(add);
-		sampler->ConnectTrigger(smoothstep);
+		sampler->ConnectOutflowLink(smoothstep);
 
 		auto always = blender.CreateNode<AlwaysMessageNode>("Hello!\n");
-		blender.AddRootTrigger(always);
-		sampler->ConnectTrigger(always);
+		blender.AddRootFlowLink(always);
+		sampler->ConnectOutflowLink(always);
 
 		[[maybe_unused]] auto out0 = blender.ExposeOutput<0>(sampler, "SamplerOutput0");
 		[[maybe_unused]] auto out1 = blender.ExposeOutput<0>(sampler, "SamplerOutput1");

@@ -105,7 +105,7 @@ public:
 	size_t GetParticleByteSize() const { return layout.particleByteSize; }
 	size_t GetBufferByteSize() const { return memoryBuffer.size(); }
 
-	void AddEmissionParticles(uint64_t amount);
+	uint64_t AddEmissionParticles(uint64_t amount);
 	void KillParticles(uint64_t offsetStart, uint64_t amount);
 	
 	//Moves all particles in the emitter section of the buffer into the editable section

@@ -1,6 +1,7 @@
 #include "ParticlePhysicsInit.h"
 
 #include <algorithm>
+#include <iostream>
 
 #include "weave/particles/core/ParticleBuffer.h"
 #include "weave/system/math/Random.h"
@@ -27,18 +28,6 @@ ParticlePhysicsInit::ParticlePhysicsInit() {
 }
 
 void ParticlePhysicsInit::ExecuteNode() {
-	auto& context = GetContext();
-	auto emissionRange = context.GetCurrentEmissionRange(triggerCountTarget);
-	if (!emissionRange.buffer) {
-		return;
-	}
-
-	auto& layout = emissionRange.buffer->GetLayout();
-	auto offsets = layout.GetOffsets<layout::Force, layout::Mass, layout::LifeTime, layout::MaxLifeTime>();
-	if (ParticleLayout::HasInvalidOffsets(offsets)) {
-		return;
-	}
-
 	const float inputMinAge = this->input.template Ref<MinAgeInput>();
 	const float inputMaxAge = this->input.template Ref<MaxAgeInput>();
 	const float inputMinMass = this->input.template Ref<MinMassInput>();
@@ -49,12 +38,23 @@ void ParticlePhysicsInit::ExecuteNode() {
 	const float minMass = std::min(inputMinMass, inputMaxMass);
 	const float maxMass = std::max(inputMinMass, inputMaxMass);
 
-	auto span = emissionRange.EmissionSpan<layout::Force, layout::Mass, layout::LifeTime, layout::MaxLifeTime>(offsets);
-	for (auto&& [force, mass, life, maxLife] : span) {
-		force.force = Vector3{};
-		mass.mass = RandomBetween(minMass, maxMass);
-		maxLife.maxLifeTime = RandomBetween(minAge, maxAge);
-		life.lifeTime = 0.0f;
+	for(auto const& emissionRange : flow.Iterate<EmissionRange>()) {
+		if(!emissionRange.buffer)
+			continue;
+
+		auto& layout = emissionRange.buffer->GetLayout();
+		auto offsets = layout.GetOffsets<layout::Force, layout::Mass, layout::LifeTime, layout::MaxLifeTime>();
+		if (ParticleLayout::HasInvalidOffsets(offsets)) {
+			return;
+		}
+
+		auto span = emissionRange.EmissionSpan<layout::Force, layout::Mass, layout::LifeTime, layout::MaxLifeTime>(offsets);
+		for (auto&& [force, mass, life, maxLife] : span) {
+			force.force = Vector3{};
+			mass.mass = RandomBetween(minMass, maxMass);
+			maxLife.maxLifeTime = RandomBetween(minAge, maxAge);
+			life.lifeTime = 0.0f;
+		}
 	}
 }
 

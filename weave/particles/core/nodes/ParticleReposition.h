@@ -6,7 +6,8 @@ namespace weave::particles {
 
 class ParticleReposition : public ParticleNode<
 	blender::In<float, float, float, float, float, float, float, float>,
-	blender::Out<>> {
+	blender::Out<>,
+	blender::Flow<EmissionRange, ParticleBuffer*>> {
 public:
 	ParticleReposition();
 
@@ -24,8 +25,8 @@ public:
 	};
 
 private:
-	void ProcessEmissionBuffers(float delayedInit, float idleToActiveTime);
-	void ProcessEditableBuffers(float delayedInit, float idleDistance, float forceFieldDistance,
+	void ProcessEmissionRange(EmissionRange const& emissionRange, float delayedInit, float idleToActiveTime);
+	void ProcessEditableBuffer(ParticleBuffer* buffer, float delayedInit, float idleDistance, float forceFieldDistance,
 		float velocityFieldDistance, float forceMagnitude, float idleToActiveTime,
 		float activeToIdleTime, float damping);
 };

@@ -6,7 +6,8 @@ namespace weave::particles {
 
 class ParticleDragSim : public ParticleNode<
 	blender::In<float, float, float, float, float>,
-	blender::Out<>> {
+	blender::Out<>,
+	blender::Flow<ParticleBuffer*>> {
 public:
 	ParticleDragSim();
 

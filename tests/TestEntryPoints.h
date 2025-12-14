@@ -8,7 +8,6 @@ TestReport TestNodes();
 
 namespace weave::tests::particles {
 TestReport TestParticleBuffer();
-TestReport TestAutoParticleBufferSelector();
 TestReport TestParticleBufferSelector();
 TestReport RunParticleMachineSelfTest();
 }

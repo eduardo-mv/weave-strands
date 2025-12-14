@@ -3,9 +3,11 @@
 #include "weave/particles/core/ParticleBuffer.h"
 #include "weave/particles/core/ParticleLayout.h"
 #include "weave/particles/core/ParticleMachine.h"
+#include "weave/particles/core/ParticleContext.h"
 #include "weave/particles/core/nodes/CommitEmissionNode.h"
 #include "weave/particles/core/nodes/ParticleEmitter.h"
 #include "weave/particles/core/nodes/ParticleNode.h"
+#include "weave/particles/core/nodes/ParticleBufferInjector.h"
 
 #include <cmath>
 #include <cstddef>
@@ -15,23 +17,24 @@ namespace weave::tests::particles {
 namespace {
 
 namespace wp = ::weave::particles;
+namespace wb = ::weave::blender;
 
-struct ParticleTestWriter : wp::ParticleNode<> {
+struct ParticleTestWriter : wp::ParticleNode<wb::Flow<wp::EmissionRange>> {
 	ParticleTestWriter(float lifeValue, float maxLifeValue)
 		: lifeValue(lifeValue), maxLifeValue(maxLifeValue) {}
 
 	void ExecuteNode() override {
 		wroteCount = 0;
-		auto& context = GetContext();
-		auto emissionRange = context.GetCurrentEmissionRange(triggerCountTarget);
-		if (!emissionRange) {
-			return;
-		}
+		for (auto const& emissionRange : flow.Iterate<wp::EmissionRange>()) {
+			if (!emissionRange) {
+				continue;
+			}
 
-		for (auto&& [life, maxLife] : emissionRange.EmissionSpan<wp::layout::LifeTime, wp::layout::MaxLifeTime>()) {
-			life.lifeTime = lifeValue;
-			maxLife.maxLifeTime = maxLifeValue;
-			++wroteCount;
+			for (auto&& [life, maxLife] : emissionRange.EmissionSpan<wp::layout::LifeTime, wp::layout::MaxLifeTime>()) {
+				life.lifeTime = lifeValue;
+				maxLife.maxLifeTime = maxLifeValue;
+				++wroteCount;
+			}
 		}
 	}
 
@@ -40,26 +43,26 @@ struct ParticleTestWriter : wp::ParticleNode<> {
 	size_t wroteCount{};
 };
 
-struct ParticleTestInspector : wp::ParticleNode<> {
+struct ParticleTestInspector : wp::ParticleNode<wb::Flow<wp::ParticleBuffer*>> {
 	ParticleTestInspector(float lifeValue, float maxLifeValue)
 		: lifeValue(lifeValue), maxLifeValue(maxLifeValue) {}
 
 	void ExecuteNode() override {
 		verifiedCount = 0;
 		mismatchCount = 0;
-		auto& context = GetContext();
-		auto* buffer = context.GetCurrentBuffer();
-		if (!buffer) {
-			return;
-		}
+		for (auto* buffer : flow.Iterate<wp::ParticleBuffer*>()) {
+			if (!buffer) {
+				continue;
+			}
 
-		for (auto&& [life, maxLife] : buffer->EditableSpan<wp::layout::LifeTime, wp::layout::MaxLifeTime>()) {
-			const bool matches = std::abs(life.lifeTime - lifeValue) < 1e-5f
-				&& std::abs(maxLife.maxLifeTime - maxLifeValue) < 1e-5f;
-			if (matches) {
-				++verifiedCount;
-			} else {
-				++mismatchCount;
+			for (auto&& [life, maxLife] : buffer->EditableSpan<wp::layout::LifeTime, wp::layout::MaxLifeTime>()) {
+				const bool matches = std::abs(life.lifeTime - lifeValue) < 1e-5f
+					&& std::abs(maxLife.maxLifeTime - maxLifeValue) < 1e-5f;
+				if (matches) {
+					++verifiedCount;
+				} else {
+					++mismatchCount;
+				}
 			}
 		}
 	}
@@ -84,9 +87,12 @@ TestReport RunParticleMachineSelfTest() {
 	machine.AddBuffer(buffer);
 	machine.SetSamplingData(1.0f, 1, true);
 
+	auto bufferInjector = machine.Graph().CreateNode<wp::ParticleBufferInjector>();
+	bufferInjector->input.SetDefaultValue<wp::ParticleBufferInjector::TargetBufferIndex>(wp::ParticleBufferInjector::kAllBuffers);
+
 	auto emitter = machine.Graph().CreateNode<wp::ParticleEmitter>();
-	emitter->input.SetDefaultValue<wp::ParticleEmitter::MinEmit>(static_cast<float>(kParticlesToEmit));
-	emitter->input.SetDefaultValue<wp::ParticleEmitter::MaxEmit>(static_cast<float>(kParticlesToEmit));
+	emitter->input.SetDefaultValue<wp::ParticleEmitter::MinEmitHz>(static_cast<float>(kParticlesToEmit));
+	emitter->input.SetDefaultValue<wp::ParticleEmitter::MaxEmitHz>(static_cast<float>(kParticlesToEmit));
 	emitter->input.SetDefaultValue<wp::ParticleEmitter::Rate>(1.0f);
 	emitter->input.SetDefaultValue<wp::ParticleEmitter::MinFrequency>(0.0f);
 	emitter->input.SetDefaultValue<wp::ParticleEmitter::MaxFrequency>(0.0f);
@@ -97,10 +103,11 @@ TestReport RunParticleMachineSelfTest() {
 	auto commit = machine.Graph().CreateNode<wp::CommitEmissionNode>();
 	auto inspector = machine.Graph().CreateNode<ParticleTestInspector>(kLifeValue, kMaxLifeValue);
 
-	machine.Graph().AddRootTrigger(emitter);
-	emitter->ConnectTrigger(writer);
-	writer->ConnectTrigger(commit);
-	commit->ConnectTrigger(inspector);
+	machine.Graph().AddRootFlowLink(bufferInjector);
+	bufferInjector->ConnectOutflowLink(emitter);
+	emitter->ConnectOutflowLink(writer);
+	writer->ConnectOutflowLink(commit);
+	commit->ConnectOutflowLink(inspector);
 
 	machine.Execute();
 

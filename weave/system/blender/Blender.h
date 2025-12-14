@@ -372,9 +372,16 @@ public:
 		for (auto& node : nodes) {
 			if (node) {
 				node->EnsureFlowCompiled(flowInterface);
+				node->PrepareFlowData(flowInterface);
+			}
+		}
+
+		for (auto& node : nodes) {
+			if (node) {
 				node->LinkFlow(flowInterface);
 			}
 		}
+
 
 		flowGraphDirty = false;
 	}

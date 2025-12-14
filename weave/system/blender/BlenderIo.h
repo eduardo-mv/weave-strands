@@ -15,6 +15,8 @@
 #include <span>
 #include <iterator>
 #include <functional>
+#include <algorithm>
+#include <array>
 #include "TupleTraits.h"
 
 
@@ -27,9 +29,63 @@ inline constexpr FlowId kInvalidFlowId = std::numeric_limits<FlowId>::max();
 
 class FlowInterface {
 public:
+	class SmallByteVector {
+	public:
+		static constexpr size_t kInlineCapacity = 64;
+
+		SmallByteVector() = default;
+
+		size_t size() const { return size_; }
+
+		bool empty() const { return size_ == 0; }
+
+		std::byte* data() {
+			return usingHeap_ ? heap_.data() : inlineStorage_.data();
+		}
+
+		std::byte const* data() const {
+			return usingHeap_ ? heap_.data() : inlineStorage_.data();
+		}
+
+		void clear() {
+			if (usingHeap_) {
+				heap_.clear();
+			}
+			size_ = 0;
+		}
+
+		void resize(size_t newSize) {
+			if (!usingHeap_ && newSize <= kInlineCapacity) {
+				if (newSize > size_) {
+					std::fill_n(inlineStorage_.data() + size_, newSize - size_, std::byte{});
+				}
+				size_ = newSize;
+				return;
+			}
+
+			EnsureHeap();
+			heap_.resize(newSize);
+			size_ = newSize;
+		}
+
+	private:
+		void EnsureHeap() {
+			if (usingHeap_) {
+				return;
+			}
+			heap_.assign(inlineStorage_.begin(), inlineStorage_.begin() + size_);
+			usingHeap_ = true;
+		}
+
+		size_t size_{};
+		bool usingHeap_{};
+		std::vector<std::byte> heap_;
+		std::array<std::byte, kInlineCapacity> inlineStorage_{};
+	};
+
 	struct FlowDataContainer {
 		std::type_index typeId;
-		std::vector<std::byte> data;
+		SmallByteVector data;
 		size_t fence{};
 		std::function<void(void*, size_t)> destructor;
 		
@@ -38,7 +94,9 @@ public:
 		}
 
 		void clear() {
-			destructor(data.data(), data.size());
+			if (!data.empty()) {
+				destructor(data.data(), data.size());
+			}
 			data.clear();
 			fence = 0;
 		}
@@ -109,9 +167,12 @@ public:
 			auto container = 
 			std::make_unique<FlowDataContainer>(
 				key,
-				std::vector<std::byte>{},
+				SmallByteVector{},
 				size_t{0},
 				[](void* mem, size_t bytes) {
+					if (!mem || bytes == 0) {
+						return;
+					}
 					auto* items = static_cast<T*>(mem);
 					size_t count = bytes / sizeof(T);
 					for (size_t i = 0; i < count; ++i) {
@@ -874,6 +935,7 @@ public:
 
 template<typename ...Types>
 struct Flow {
+	friend class Blender;
 	using ValueTuple = std::tuple<Types...>;
 
 private:
@@ -911,21 +973,19 @@ public:
 		return typename FlowContainerView<ValueType>::Range{ std::get<FlowContainerView<ValueType>>(flowTuple) };
 	}
 
-	void LinkFlow(FlowId flowId, FlowInterface &flowInterface) {
+	void PrepareFlowData(FlowId flowId, FlowInterface &flowInterface) {
 		auto& block = flowInterface.GetBlock(flowId);
 		block.PrepareData<Types...>();
-		LinkFlowTuple(flowId, flowInterface);
 	}
 
-private:
 	template<size_t N = 0>
-	void LinkFlowTuple(FlowId flowId, FlowInterface &flowInterface) {
+	void LinkFlow(FlowId flowId, FlowInterface &flowInterface) {
 		if constexpr (N < sizeof...(Types)) {
 			using T = std::tuple_element_t<N, ValueTuple>;
 			auto& tupleElem = std::get<N>(flowTuple);
 			tupleElem = FlowContainerView<T>::Make(flowId, flowInterface);
 
-			LinkFlowTuple<N + 1>(flowId, flowInterface);
+			LinkFlow<N + 1>(flowId, flowInterface);
 		}
 	}
 };

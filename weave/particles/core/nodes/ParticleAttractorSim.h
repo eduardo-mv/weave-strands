@@ -8,7 +8,8 @@ namespace weave::particles {
 
 class ParticleAttractorSim : public ParticleNode<
 	blender::In<Transform, float, float, float, float, Vector3>,
-	blender::Out<>> {
+	blender::Out<>,
+	blender::Flow<ParticleBuffer*>> {
 public:
 	ParticleAttractorSim();
 

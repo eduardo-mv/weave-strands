@@ -8,7 +8,8 @@ namespace weave::particles {
 
 class ParticleBoxInit : public ParticleNode<
 	blender::In<float, float, float, float, float, float>,
-	blender::Out<>> {
+	blender::Out<>,
+	blender::Flow<EmissionRange>> {
 public:
 	ParticleBoxInit();
 

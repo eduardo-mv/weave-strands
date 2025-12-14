@@ -4,7 +4,7 @@
 
 namespace weave::particles {
 
-class CommitEmissionNode : public ParticleNode<> {
+class CommitEmissionNode : public ParticleNode<blender::Flow<ParticleBuffer*, EmissionRange>> {
 public:
 	void ExecuteNode() override;
 };

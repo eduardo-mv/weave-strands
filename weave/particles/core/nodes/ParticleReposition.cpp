@@ -37,18 +37,23 @@ void ParticleReposition::ExecuteNode() {
 	const float activeToIdleTime = std::max(0.0f, this->input.template Ref<ActiveToIdleTime>());
 	const float damping = std::clamp(this->input.template Ref<Damping>(), 0.0f, 1.0f);
 
-	ProcessEmissionBuffers(delayedInit, idleToActiveTime);
-	ProcessEditableBuffers(delayedInit, idleDistance, forceFieldDistance, velocityFieldDistance,
-		forceMagnitude, idleToActiveTime, activeToIdleTime, damping);
-}
-
-void ParticleReposition::ProcessEmissionBuffers(float delayedInit, float idleToActiveTime) {
-	auto& context = GetContext();
-	auto emissionRange = context.GetCurrentEmissionRange(triggerCountTarget);
-	if (!emissionRange) {
-		return;
+	for (auto const& emissionRange : flow.Iterate<EmissionRange>()) {
+		if (!emissionRange) {
+			continue;
+		}
+		ProcessEmissionRange(emissionRange, delayedInit, idleToActiveTime);
 	}
 
+	for (auto* buffer : flow.Iterate<ParticleBuffer*>()) {
+		if (!buffer) {
+			continue;
+		}
+		ProcessEditableBuffer(buffer, delayedInit, idleDistance, forceFieldDistance, velocityFieldDistance,
+			forceMagnitude, idleToActiveTime, activeToIdleTime, damping);
+	}
+}
+
+void ParticleReposition::ProcessEmissionRange(EmissionRange const& emissionRange, float delayedInit, float idleToActiveTime) {
 	auto& layout = emissionRange.GetLayout();
 	auto offsets = layout.GetOffsets<layout::Position, layout::LifeTime, layout::Target>();
 	if (ParticleLayout::HasInvalidOffsets(offsets)) {
@@ -64,13 +69,12 @@ void ParticleReposition::ProcessEmissionBuffers(float delayedInit, float idleToA
 	}
 }
 
-void ParticleReposition::ProcessEditableBuffers(float delayedInit, float idleDistance, float forceFieldDistance,
+void ParticleReposition::ProcessEditableBuffer(ParticleBuffer* buffer, float delayedInit, float idleDistance, float forceFieldDistance,
 	float velocityFieldDistance, float forceMagnitude, float idleToActiveTime,
 	float activeToIdleTime, float damping) {
 	auto& context = GetContext();
 	const float deltaTime = std::max(0.0f, context.sampling.deltaTime);
 
-	auto* buffer = context.GetCurrentBuffer();
 	if (!buffer) {
 		return;
 	}

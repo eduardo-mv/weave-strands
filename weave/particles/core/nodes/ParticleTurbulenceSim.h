@@ -9,7 +9,8 @@ namespace weave::particles {
 
 class ParticleTurbulenceSim : public ParticleNode<
 	blender::In<Transform, blender::TurbulenceFieldList, float, float>,
-	blender::Out<>> {
+	blender::Out<>,
+	blender::Flow<ParticleBuffer*>> {
 public:
 	ParticleTurbulenceSim();
 
@@ -24,7 +25,7 @@ public:
 
 private:
 	void ApplyTurbulence(blender::TurbulenceFieldList const& fields, Transform const& transform,
-		float radiusInput, float decayInput);
+		float radiusInput, float decayInput, ParticleBuffer& buffer);
 };
 
 } // namespace weave::particles

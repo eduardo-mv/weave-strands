@@ -1,6 +1,8 @@
 #pragma once
 
 #include <cstdint>
+#include <iostream>
+#include <format>
 
 #include "weave/particles/core/nodes/ParticleNode.h"
 
@@ -8,7 +10,8 @@ namespace weave::particles {
 
 class ParticleEmitter : public ParticleNode<
 	blender::In<float, float, float, float, float, double, uint64_t, uint32_t>,
-	blender::Out<>> {
+	blender::Out<>, 
+	blender::Flow<ParticleBuffer*, EmissionRange>> {
 public:
 	ParticleEmitter();
 
@@ -17,8 +20,8 @@ public:
 	void Reset();
 
 	enum InputIndex : size_t {
-		MinEmit,        // Minimum particles emitted per burst
-		MaxEmit,        // Maximum particles emitted per burst
+		MinEmitHz,        // Minimum particles emitted per second
+		MaxEmitHz,        // Maximum particles emitted per second
 		Rate,           // Scalar multiplier applied to emission counts
 		MinFrequency,   // Shortest delay between emission windows (seconds)
 		MaxFrequency,   // Longest delay between emission windows (seconds)
