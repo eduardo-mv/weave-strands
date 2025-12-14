@@ -10,7 +10,7 @@
     --border: #333a4d;
     --danger: #ff7b7b;
     --connection-data: #9ef5c1;
-    --connection-trigger: #6dd3fb;
+    --connection-flow: #6dd3fb;
     --type-float: #f4d35e;
     --type-vec2: #80ffea;
     --type-vec3: #9ef5c1;
@@ -664,19 +664,19 @@ label {
     border-color: var(--type-quat);
 }
 
-.port-row.trigger-row .port-label {
-    color: var(--connection-trigger);
+.port-row.flow-row .port-label {
+    color: var(--connection-flow);
 }
 
-.port-knob.trigger {
-    border-color: var(--connection-trigger);
+.port-knob.flow {
+    border-color: var(--connection-flow);
     width: 18px;
     height: 18px;
     display: flex;
     align-items: center;
     justify-content: center;
     font-size: 0.85rem;
-    color: var(--connection-trigger);
+    color: var(--connection-flow);
     font-weight: 700;
 }
 

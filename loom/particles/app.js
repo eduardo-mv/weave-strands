@@ -7,7 +7,7 @@ const TRANSFORM_HEADER = "weave/system/math/Transform.h";
 const RNG_HEADER = "weave/system/blender/nodes/RngNodes.h";
 const NOISE_HEADER = "weave/system/blender/nodes/NoiseNodes.h";
 const SIGNAL_SAMPLER_HEADER = "weave/animation/blender/samplers/SignalSampler.h";
-const TRIGGER_FLOW_HEADER = "weave/system/blender/nodes/FlowNodes.h";
+const FLOW_NODES_HEADER = "weave/system/blender/nodes/FlowNodes.h";
 
 const TYPE_VARIANTS = [
   { id: "float", suffix: "Float", varSuffix: "Float", label: "Float", typeGroup: "Float", typeName: "float", zero: "0.0f", one: "1.0f" },
@@ -143,7 +143,7 @@ function getVariantForType(typeId, fallback = "float") {
   const normalized = normalizeDataType(typeId) || fallback;
   return TYPE_VARIANT_MAP[normalized] || TYPE_VARIANT_MAP[fallback];
 }
-const TRIGGER_PORT_KEY = "__trigger__";
+const FLOW_PORT_KEY = "__flow__";
 const DEFAULT_NODE_WIDTH = 240;
 const DEFAULT_NODE_HEIGHT = 260;
 const DEFAULT_GRAPH_NAME = "Blender Graph";
@@ -155,7 +155,7 @@ const ROOT_NODE_DEFINITION = {
   category: "System",
   typeGroup: "System",
   label: "Root",
-  description: "Entry point for Blender graphs. Connect its trigger output to start execution.",
+  description: "Entry point for Blender graphs. Connect its flow output to start execution.",
   varPrefix: "graphRoot",
   include: null,
   inputs: [],
@@ -249,7 +249,7 @@ const PARTICLE_NODES = [
   {
     typeId: "AutoParticleBufferSelector",
     label: "Auto Buffer Selector",
-    description: "Automatically sets the current particle buffer based on the trigger index.",
+    description: "Automatically sets the current particle buffer based on the flow index.",
     cppType: "wp::AutoParticleBufferSelector",
     typeGroup: "Buffer Selectors",
     include: "weave/particles/core/nodes/AutoParticleBufferSelector.h",
@@ -526,7 +526,7 @@ const PORT_HINTS = {
       MaxFrequency: "Longest delay between emission windows (seconds)",
       MaxRuntime: "Optional lifetime cap for the emitter (seconds)",
       MaxParticles: "Hard cap for particles managed by this emitter",
-      ResetSignal: "Optional external reset trigger value"
+      ResetSignal: "Optional external reset signal value"
     }
   },
   AutoParticleBufferSelector: {
@@ -670,19 +670,19 @@ const PORT_HINTS = {
       DecayInput: "Falloff applied as particles leave the radius"
     }
   },
-  TriggerFunnel: {
-    outputs: {
-      TriggerCount: "Number of upstream triggers wired into this node"
+  FlowConditional: {
+    inputs: {
+      ConditionInput: "Forward flow only when true"
     }
   },
-  TriggerConditional: {
+  FlowSelector: {
     inputs: {
-      ConditionInput: "Forward triggers only when true"
+      SelectedIndex: "Flow index that is allowed to propagate"
     }
   },
-  TriggerSelector: {
+  FlushFlow: {
     inputs: {
-      SelectedIndex: "Trigger index that is allowed to propagate"
+      SelectedIndex: "Optional flow index hint (unused)"
     }
   },
   InputSelector: {
@@ -846,43 +846,91 @@ function buildAnimationSamplerNodes() {
   ];
 }
 
+const DEFAULT_FLUSH_FLOW_TYPES = "weave::particles::ParticleBuffer*, weave::particles::EmissionRange";
+
+function getFlushFlowTypeString(node, options = {}) {
+  const customValues = node?.customValues || {};
+  let value = String(customValues.flowTypes ?? "").trim();
+  if (!value.length) {
+    value = DEFAULT_FLUSH_FLOW_TYPES;
+  }
+  if (options.normalize && node?.customValues) {
+    node.customValues.flowTypes = value;
+  }
+  return value;
+}
+
+function getFlushFlowTypeList(node, options = {}) {
+  const normalized = getFlushFlowTypeString(node, options);
+  return normalized
+    .split(",")
+    .map(entry => entry.trim())
+    .filter(Boolean);
+}
+
+function buildFlushFlowCppType(node) {
+  const typeList = getFlushFlowTypeList(node, { normalize: true });
+  if (!typeList.length) {
+    return "wb::FlushFlow<>";
+  }
+  return `wb::FlushFlow<${typeList.join(", ")}>`;
+}
+
+function handleFlushFlowConfigChange(node) {
+  if (!node || node.typeId !== "FlushFlow") {
+    return;
+  }
+  getFlushFlowTypeString(node, { normalize: true });
+  markStateDirty();
+  renderAll();
+}
+
 function buildFlowControlNodes() {
   return [
     {
-      typeId: "TriggerFunnel",
+      typeId: "FlowConditional",
       category: "Flow Control",
-      label: "Trigger Funnel",
-      description: "Merges or splits trigger connections without modifying data.",
-      cppType: "wb::TriggerFunnel",
-      include: TRIGGER_FLOW_HEADER,
-      varPrefix: "triggerFunnel",
-      inputs: [],
-      outputs: [
-        { key: "TriggerCount", label: "Trigger Count", cppAccessor: "TriggerCountOutput", accessorType: "enum", dataType: "uint", hint: "Number of triggers wired into this funnel" }
+      label: "Flow Conditional",
+      description: "Propagates flow only when the condition input is true.",
+      cppType: "wb::FlowConditional",
+      include: FLOW_NODES_HEADER,
+      varPrefix: "flowConditional",
+      inputs: [
+        { key: "ConditionInput", label: "Condition", cppAccessor: "ConditionInput", accessorType: "enum", dataType: "bool", defaultValue: "true", hint: "Flow passes only when this evaluates to true" }
       ]
     },
     {
-      typeId: "TriggerConditional",
+      typeId: "FlowSelector",
       category: "Flow Control",
-      label: "Trigger Conditional",
-      description: "Propagates triggers only when the condition input is true.",
-      cppType: "wb::TriggerConditional",
-      include: TRIGGER_FLOW_HEADER,
-      varPrefix: "triggerConditional",
+      label: "Flow Selector",
+      description: "Allows flow propagation only for the specified incoming flow index.",
+      cppType: "wb::FlowSelector",
+      include: FLOW_NODES_HEADER,
+      varPrefix: "flowSelector",
       inputs: [
-        { key: "ConditionInput", label: "Condition", cppAccessor: "ConditionInput", accessorType: "enum", dataType: "bool", defaultValue: "true", hint: "Triggers pass only when this evaluates to true" }
+        { key: "SelectedIndex", label: "Selected Index", cppAccessor: "SelectedIndex", accessorType: "enum", dataType: "uint", defaultValue: "0u", hint: "Only this flow input will be forwarded" }
       ]
     },
     {
-      typeId: "TriggerSelector",
+      typeId: "FlushFlow",
       category: "Flow Control",
-      label: "Trigger Selector",
-      description: "Allows trigger propagation only for the specified incoming trigger index.",
-      cppType: "wb::TriggerSelector",
-      include: TRIGGER_FLOW_HEADER,
-      varPrefix: "triggerSelector",
+      label: "Flush Flow",
+      description: "Flushes the configured flow payload types each frame.",
+      include: FLOW_NODES_HEADER,
+      varPrefix: "flushFlow",
+      cppTypeResolver: node => buildFlushFlowCppType(node),
       inputs: [
-        { key: "SelectedIndex", label: "Selected Index", cppAccessor: "SelectedIndex", accessorType: "enum", dataType: "uint", defaultValue: "0u", hint: "Only this trigger input will be forwarded" }
+        { key: "SelectedIndex", label: "Selected Index", cppAccessor: "SelectedIndex", accessorType: "enum", dataType: "uint", defaultValue: "0u", hint: "Optional hint for flow selection" }
+      ],
+      customSetters: [
+        {
+          key: "flowTypes",
+          label: "Flow Data Types",
+          inputType: "text",
+          defaultValue: DEFAULT_FLUSH_FLOW_TYPES,
+          helperText: "Comma-separated C++ types to flush (e.g. weave::particles::ParticleBuffer*, weave::particles::EmissionRange)",
+          onChange: handleFlushFlowConfigChange
+        }
       ]
     }
   ];
@@ -1467,6 +1515,7 @@ function buildInputSelectorNodes() {
     }
   ];
 }
+
 
 const RANDOM_VALUE_TYPES = ["float", "vec2", "vec3", "vec4", "bool", "int", "uint"];
 
@@ -3247,7 +3296,7 @@ function copySelectionToClipboard() {
     }
   }));
   const nodeIdSet = new Set(nodes.map(node => node.id));
-  const triggerConnections = state.connections
+  const flowConnections = state.connections
     .filter(conn => nodeIdSet.has(conn.from) && nodeIdSet.has(conn.to))
     .map(conn => ({ from: conn.from, to: conn.to }));
   const dataConnections = state.dataConnections
@@ -3260,7 +3309,7 @@ function copySelectionToClipboard() {
     }));
   clipboardData = {
     nodes: payloadNodes,
-    connections: triggerConnections,
+    connections: flowConnections,
     dataConnections,
     anchor
   };
@@ -3397,13 +3446,13 @@ function openCodeModal(code) {
   });
 }
 
-function closeCodeModal({ focusTrigger } = {}) {
+function closeCodeModal({ focusGenerateButton } = {}) {
   if (!codeModalEl) {
     return;
   }
   codeModalEl.classList.add("hidden");
   codeModalEl.setAttribute("aria-hidden", "true");
-  if (focusTrigger && generateBtn) {
+  if (focusGenerateButton && generateBtn) {
     generateBtn.focus();
   }
 }
@@ -4095,7 +4144,7 @@ function init() {
     copyCodeBtn.addEventListener("click", copyGeneratedCode);
   }
   if (closeCodeModalBtn) {
-    closeCodeModalBtn.addEventListener("click", () => closeCodeModal({ focusTrigger: true }));
+    closeCodeModalBtn.addEventListener("click", () => closeCodeModal({ focusGenerateButton: true }));
   }
   if (applyTransformModalBtn) {
     applyTransformModalBtn.addEventListener("click", () => applyTransformModal());
@@ -4133,7 +4182,7 @@ function init() {
         return;
       }
       if (codeModalEl && !codeModalEl.classList.contains("hidden")) {
-        closeCodeModal({ focusTrigger: true });
+        closeCodeModal({ focusGenerateButton: true });
         return;
       }
     }
@@ -4491,11 +4540,11 @@ function renderAll() {
 
 function renderNodes() {
   ensureRootNode();
-  const triggerCountBefore = state.connections.length;
+  const flowCountBefore = state.connections.length;
   const dataCountBefore = state.dataConnections.length;
   state.connections = state.connections.filter(conn => !isRootNodeId(conn.to));
   state.dataConnections = state.dataConnections.filter(conn => !isRootNodeId(conn.from) && !isRootNodeId(conn.to));
-  if (state.connections.length !== triggerCountBefore || state.dataConnections.length !== dataCountBefore) {
+  if (state.connections.length !== flowCountBefore || state.dataConnections.length !== dataCountBefore) {
     markStateDirty();
   }
   nodesLayerEl.innerHTML = "";
@@ -4643,22 +4692,22 @@ function renderNodes() {
       outputCol.appendChild(row);
     });
 
-    const triggerRow = document.createElement("div");
-    triggerRow.className = "port-row output trigger-row";
-    const triggerLabel = document.createElement("span");
-    triggerLabel.className = "port-label";
-    triggerLabel.textContent = "Trigger";
-    const triggerKnob = document.createElement("button");
-    triggerKnob.type = "button";
-    triggerKnob.className = "port-knob output trigger";
-    triggerKnob.dataset.nodeId = node.id;
-    triggerKnob.dataset.portKey = TRIGGER_PORT_KEY;
-    triggerKnob.dataset.portRole = "trigger";
-    triggerKnob.textContent = "➔";
-    triggerKnob.title = "Drag to connect trigger";
-    triggerKnob.addEventListener("pointerdown", event => startConnectionDrag(event, node.id));
-    triggerRow.append(triggerLabel, triggerKnob);
-    outputCol.appendChild(triggerRow);
+    const flowRow = document.createElement("div");
+    flowRow.className = "port-row output flow-row";
+    const flowLabel = document.createElement("span");
+    flowLabel.className = "port-label";
+    flowLabel.textContent = "Flow";
+    const flowKnob = document.createElement("button");
+    flowKnob.type = "button";
+    flowKnob.className = "port-knob output flow";
+    flowKnob.dataset.nodeId = node.id;
+    flowKnob.dataset.portKey = FLOW_PORT_KEY;
+    flowKnob.dataset.portRole = "flow";
+    flowKnob.textContent = "➔";
+    flowKnob.title = "Drag to connect flow";
+    flowKnob.addEventListener("pointerdown", event => startFlowDrag(event, node.id));
+    flowRow.append(flowLabel, flowKnob);
+    outputCol.appendChild(flowRow);
 
     ports.appendChild(outputCol);
     card.appendChild(ports);
@@ -4833,7 +4882,7 @@ function appendNodeEditorContent(node, context, target) {
     section.appendChild(heading);
     const desc = document.createElement("p");
     desc.className = "muted";
-    desc.textContent = "This is the Blender graph entry point. Connect its trigger output to nodes that should run each frame.";
+    desc.textContent = "This is the Blender graph entry point. Connect its flow output to nodes that should run each frame.";
     section.appendChild(desc);
     target.appendChild(section);
     return;
@@ -5020,20 +5069,20 @@ function appendNodeEditorContent(node, context, target) {
     target.appendChild(optSection);
   }
 
-  const triggerSection = document.createElement("div");
-  triggerSection.className = sectionClass;
+  const flowSection = document.createElement("div");
+  flowSection.className = sectionClass;
   const connTitle = document.createElement(headingTag);
-  connTitle.textContent = "Trigger Links";
-  triggerSection.appendChild(connTitle);
+  connTitle.textContent = "Flow Links";
+  flowSection.appendChild(connTitle);
 
   const outgoingList = document.createElement("ul");
   outgoingList.className = "connection-list";
   const outgoing = state.connections.filter(conn => conn.from === node.id);
   if (outgoing.length === 0) {
     const empty = document.createElement("p");
-    empty.textContent = "No outgoing triggers";
+    empty.textContent = "No outgoing flow links";
     empty.className = "muted";
-    triggerSection.appendChild(empty);
+    flowSection.appendChild(empty);
   } else {
     outgoing.forEach(conn => {
       const item = document.createElement("li");
@@ -5046,13 +5095,13 @@ function appendNodeEditorContent(node, context, target) {
       item.appendChild(removeBtn);
       outgoingList.appendChild(item);
     });
-    triggerSection.appendChild(outgoingList);
+    flowSection.appendChild(outgoingList);
   }
 
   if (state.connections.some(conn => conn.to === node.id)) {
     const incomingTitle = document.createElement(isInline ? "h5" : "h4");
     incomingTitle.textContent = "Incoming";
-    triggerSection.appendChild(incomingTitle);
+    flowSection.appendChild(incomingTitle);
     const incomingList = document.createElement("ul");
     incomingList.className = "connection-list";
     state.connections
@@ -5068,10 +5117,10 @@ function appendNodeEditorContent(node, context, target) {
         item.appendChild(removeBtn);
         incomingList.appendChild(item);
       });
-    triggerSection.appendChild(incomingList);
+    flowSection.appendChild(incomingList);
   }
 
-  target.appendChild(triggerSection);
+  target.appendChild(flowSection);
 
   const dataSection = document.createElement("div");
   dataSection.className = sectionClass;
@@ -5813,7 +5862,7 @@ function removeConnection(connectionId) {
   pruneConnections(conn => conn.id === connectionId);
 }
 
-function disconnectTriggerPort(nodeId) {
+function disconnectFlowPort(nodeId) {
   return pruneConnections(conn => conn.from === nodeId);
 }
 
@@ -5833,10 +5882,10 @@ function updateConnectionLines() {
   connectionLayerEl.setAttribute("viewBox", `0 0 ${canvasRect.width} ${canvasRect.height}`);
   connectionLayerEl.setAttribute("width", canvasRect.width);
   connectionLayerEl.setAttribute("height", canvasRect.height);
-  const triggerPreview = connectionDrag?.previewPath ?? null;
+  const flowPreview = connectionDrag?.previewPath ?? null;
   const dataPreview = ioDrag?.previewPath ?? null;
-  if (triggerPreview && triggerPreview.parentElement === connectionLayerEl) {
-    connectionLayerEl.removeChild(triggerPreview);
+  if (flowPreview && flowPreview.parentElement === connectionLayerEl) {
+    connectionLayerEl.removeChild(flowPreview);
   }
   if (dataPreview && dataPreview.parentElement === connectionLayerEl) {
     connectionLayerEl.removeChild(dataPreview);
@@ -5860,7 +5909,7 @@ function updateConnectionLines() {
   });
 
   state.connections.forEach(conn => {
-    const startPoint = getTriggerPortPosition(conn.from);
+    const startPoint = getFlowPortPosition(conn.from);
     const endPoint = getNodeLeftDock(conn.to);
     if (!startPoint || !endPoint) {
       return;
@@ -5868,7 +5917,7 @@ function updateConnectionLines() {
     const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
     path.setAttribute("d", computeConnectionPath(startPoint.x, startPoint.y, endPoint.x, endPoint.y));
     path.setAttribute("fill", "none");
-    path.setAttribute("stroke", "var(--connection-trigger)");
+    path.setAttribute("stroke", "var(--connection-flow)");
     path.setAttribute("stroke-width", "2");
     path.setAttribute("stroke-linecap", "round");
     path.setAttribute("opacity", "0.9");
@@ -5878,14 +5927,14 @@ function updateConnectionLines() {
   if (dataPreview) {
     connectionLayerEl.appendChild(dataPreview);
   }
-  if (triggerPreview) {
-    connectionLayerEl.appendChild(triggerPreview);
+  if (flowPreview) {
+    connectionLayerEl.appendChild(flowPreview);
   }
 }
 
-function startConnectionDrag(event, fromNodeId) {
+function startFlowDrag(event, fromNodeId) {
   if (event.ctrlKey) {
-    const disconnected = disconnectTriggerPort(fromNodeId);
+    const disconnected = disconnectFlowPort(fromNodeId);
     if (disconnected) {
       event.stopPropagation();
       event.preventDefault();
@@ -5894,14 +5943,14 @@ function startConnectionDrag(event, fromNodeId) {
   }
   event.stopPropagation();
   event.preventDefault();
-  const triggerAnchor = getTriggerPortPosition(fromNodeId);
-  if (!triggerAnchor) {
+  const flowAnchor = getFlowPortPosition(fromNodeId);
+  if (!flowAnchor) {
     return;
   }
 
   const previewPath = document.createElementNS("http://www.w3.org/2000/svg", "path");
   previewPath.setAttribute("fill", "none");
-  previewPath.setAttribute("stroke", "var(--connection-trigger)");
+  previewPath.setAttribute("stroke", "var(--connection-flow)");
   previewPath.setAttribute("stroke-width", "2");
   previewPath.setAttribute("stroke-linecap", "round");
   previewPath.setAttribute("opacity", "0.65");
@@ -5909,25 +5958,25 @@ function startConnectionDrag(event, fromNodeId) {
 
   connectionDrag = {
     fromNodeId,
-    startX: triggerAnchor.x,
-    startY: triggerAnchor.y,
+    startX: flowAnchor.x,
+    startY: flowAnchor.y,
     previewPath,
     hoverTargetId: null
   };
 
-  document.addEventListener("pointermove", onConnectionDragMove);
-  document.addEventListener("pointerup", endConnectionDrag);
-  updateConnectionPreview(event);
+  document.addEventListener("pointermove", onFlowDragMove);
+  document.addEventListener("pointerup", endFlowDrag);
+  updateFlowPreview(event);
 }
 
-function onConnectionDragMove(event) {
+function onFlowDragMove(event) {
   if (!connectionDrag) {
     return;
   }
-  updateConnectionPreview(event);
+  updateFlowPreview(event);
 }
 
-function updateConnectionPreview(event) {
+function updateFlowPreview(event) {
   if (!connectionDrag) {
     return;
   }
@@ -5950,12 +5999,12 @@ function updateConnectionPreview(event) {
   connectionDrag.previewPath.setAttribute("d", computeConnectionPath(connectionDrag.startX, connectionDrag.startY, endPoint.x, endPoint.y));
 }
 
-function endConnectionDrag(event) {
+function endFlowDrag(event) {
   if (!connectionDrag) {
     return;
   }
-  document.removeEventListener("pointermove", onConnectionDragMove);
-  document.removeEventListener("pointerup", endConnectionDrag);
+  document.removeEventListener("pointermove", onFlowDragMove);
+  document.removeEventListener("pointerup", endFlowDrag);
 
   const { fromNodeId, previewPath, hoverTargetId } = connectionDrag;
   if (previewPath && previewPath.parentElement === connectionLayerEl) {
@@ -6121,7 +6170,7 @@ function findPortElementAtPoint(clientX, clientY) {
     return null;
   }
   const role = target.dataset.portRole;
-  if (!role || role === "trigger") {
+  if (!role || role === "flow") {
     return null;
   }
   const nodeId = target.dataset.nodeId;
@@ -6142,7 +6191,7 @@ function portsCompatibleForDrag(dragState, portInfo) {
   if (!dragState || !portInfo) {
     return false;
   }
-  if (portInfo.role === "trigger" || portInfo.role === dragState.role) {
+  if (portInfo.role === "flow" || portInfo.role === dragState.role) {
     return false;
   }
   const portType = normalizeDataType(portInfo.element?.dataset?.dataType);
@@ -6248,8 +6297,8 @@ function findNodeCardAtPoint(clientX, clientY) {
   return element?.closest(".node-card") ?? null;
 }
 
-function getTriggerPortPosition(nodeId) {
-  const knobPosition = getPortPosition(nodeId, TRIGGER_PORT_KEY, "trigger");
+function getFlowPortPosition(nodeId) {
+  const knobPosition = getPortPosition(nodeId, FLOW_PORT_KEY, "flow");
   if (knobPosition) {
     return knobPosition;
   }
@@ -6593,6 +6642,9 @@ function generateCpp() {
       }
     });
     (def.customSetters || []).forEach(setter => {
+      if (!setter.method) {
+        return;
+      }
       const rawValue = (node.customValues?.[setter.key] ?? "").trim();
       let formatted = rawValue;
       if (setter.formatValue) {
@@ -6604,10 +6656,10 @@ function generateCpp() {
     });
   });
 
-  const rootConnections = state.connections.filter(conn => isRootNodeId(conn.from));
-  if (rootConnections.length) {
+  const rootFlowLinks = state.connections.filter(conn => isRootNodeId(conn.from));
+  if (rootFlowLinks.length) {
     appendBlankLine(bodyLines);
-    rootConnections.forEach(conn => {
+    rootFlowLinks.forEach(conn => {
       const targetVar = variableMap.get(conn.to);
       if (targetVar) {
         bodyLines.push(`graph.AddRootFlowLink(${targetVar});`);
@@ -6639,10 +6691,11 @@ function generateCpp() {
     });
   }
 
-  const extraTriggers = state.connections.filter(conn => !isRootNodeId(conn.from));
-  if (extraTriggers.length) {
+  const extraFlowLinks = state.connections.filter(conn => !isRootNodeId(conn.from));
+  if (extraFlowLinks.length) {
     appendBlankLine(bodyLines);
-    extraTriggers.forEach(conn => {
+    bodyLines.push("// Flow connections");
+    extraFlowLinks.forEach(conn => {
       const fromVar = variableMap.get(conn.from);
       const toVar = variableMap.get(conn.to);
       if (fromVar && toVar) {
